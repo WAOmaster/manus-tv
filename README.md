@@ -27,7 +27,7 @@ A fast, remote-friendly live-TV app for Android TV / Google TV. You add your own
 - Previous channel, channel numbers, sleep timer, automatic fallback to a channel's next link.
 - Encrypted backup and restore through your phone.
 
-See the [release notes](https://github.com/WAOmaster/manus-tv/releases/latest).
+Watch the [2.3 launch film](https://tv.appcloudpro.com/media/2.3/manus-tv-2.3.mp4) (50 s) and read the [release notes](https://github.com/WAOmaster/manus-tv/releases/latest).
 
 ## Features
 - Add playlists by typing, or send the link from your phone (scan the QR code on the TV; same Wi-Fi).

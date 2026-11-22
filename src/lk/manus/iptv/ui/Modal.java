@@ -9,7 +9,7 @@ import android.widget.FrameLayout;
 public class Modal extends FrameLayout {
     public Modal(Context c) {
         super(c);
-        setBackgroundColor(0x99000000);
+        setBackgroundColor(Ui.alpha(Ui.INK, 0.6f));
         setClickable(true);
         setVisibility(GONE);
     }

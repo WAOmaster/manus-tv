@@ -17,6 +17,7 @@ public interface Engine {
         void onTracks();                  // the subtitle list changed: pull subtitleTracks()
         void onCues(String text);         // the text to show now; "" = none
         default void onAudioDrop() { }    // one audio underrun / sink error (the activity counts them)
+        default void onUnsupportedAudio() { } // decoder/sink failed for audio format
     }
 
     final class Track { public int id; public String mime = "", lang = "", label = ""; public boolean sel; }
@@ -26,8 +27,13 @@ public interface Engine {
     boolean smart();
     /** Exactly one of holder / surface is the video target. quality = auto | saver | best (only used when smart()). */
     void prepare(Channel c, String url, String quality, SurfaceHolder holder, Surface surface) throws Exception;
+    default void prepare(Channel c, String url, String quality, SurfaceHolder holder, Surface surface, long startPosMs) throws Exception {
+        prepare(c, url, quality, holder, surface);
+        if (startPosMs > 0) seekTo(startPosMs);
+    }
     void play();
     void pause();
+    default boolean isPlaying() { return false; }
     /** Releases without blocking the UI thread on a hung read; done (may be null) runs on the UI thread afterwards. */
     void release(Runnable done);
 
@@ -35,11 +41,13 @@ public interface Engine {
     /** id from subtitleTracks(), -1 = off. False if the engine refused. */
     boolean selectSubtitle(int id);
 
-    // timeshift (smart engines); -1 = unknown
-    long positionMs();        // within the seekable window
+    // timeshift / seeking; -1 = unknown
+    long positionMs();        // within the seekable window or media position
+    default long durationMs() { return -1; }
     long windowMs();          // length of the seekable window, -1 if the stream is not a live window
     long behindMs();          // how far behind the normal live position (0 = live)
     void seekBy(long ms);
+    default void seekTo(long positionMs) { }
     void goLive();
 
     // audio (all optional)

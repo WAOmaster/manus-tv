@@ -21,6 +21,8 @@ public final class Channel {
     public boolean breg;           // the name carried a region marker for its own country ("Nick Jr. (India)", "TBN UK")
     public String ikey;            // cache of Dedup.idKey (base tvg-id without @feed, lowercase; "" = none)
     public final String[] folders; // the source's own group-title folders, as written; same as groups for iptv-org
+    public int archiveDays;        // T95: Xtream catch-up window in days, 0 = none
+    public long xtItem;            // T95: item id of an Xtream live channel, 0 = not an Xtream channel
 
     public Channel(String id, String name, String quality, String logo, String[] groups,
                    String country, String url, String userAgent, String referrer) {
@@ -44,7 +46,9 @@ public final class Channel {
 
     /** Copy tagged with a source id; folders stay as given. */
     public Channel withSrc(String s) {
-        return new Channel(id, name, quality, logo, groups, country, url, userAgent, referrer, s, folders);
+        Channel n = new Channel(id, name, quality, logo, groups, country, url, userAgent, referrer, s, folders);
+        n.archiveDays = archiveDays; n.xtItem = xtItem;
+        return n;
     }
 
     /** Index.relabel: country/areas/language from the cloud feed data; resets the caches that depend on them. */

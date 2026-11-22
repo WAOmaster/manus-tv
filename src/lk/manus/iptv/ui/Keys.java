@@ -74,12 +74,14 @@ public final class Keys {
         }
     }
 
+    /** The real colour keys on a remote (red, green, yellow, blue): the only saturated colours allowed in the app. */
+    public static final int[] KEY_COLOURS = {0xFFFF4D4D, 0xFF3DDC84, 0xFFFFC940, 0xFF4D9DFF};
     /** Help page rows: {label, description, dot colour or 0}. */
     public static final Object[][] HELP = {
-        {"Red", "Favourite on / off", 0xFFFF4D4D},
-        {"Green", "Categories", 0xFF3DDC84},
-        {"Yellow", "Subtitles", 0xFFFFC940},
-        {"Blue", "Search", 0xFF4D9DFF},
+        {"Red", "Favourite on / off", KEY_COLOURS[0]},
+        {"Green", "Categories", KEY_COLOURS[1]},
+        {"Yellow", "Subtitles", KEY_COLOURS[2]},
+        {"Blue", "Search", KEY_COLOURS[3]},
         {"OK", "Open the guide (hold = favourite)", 0},
         {"Up / Down", "Next / previous channel", 0},
         {"Left", "Open the guide", 0},

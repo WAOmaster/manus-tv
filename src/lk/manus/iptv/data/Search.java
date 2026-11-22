@@ -4,9 +4,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.Set;
 
-/** Pure Java channel-name search: case and accent insensitive, exact > prefix > word-prefix > substring, lk and favourites boosted. */
+/** Pure Java channel-name search: case and accent insensitive, exact > prefix > word-prefix > substring, lk boosted. */
 public final class Search {
     public static final int MAX = 200;
 
@@ -24,7 +23,7 @@ public final class Search {
     }
 
     /** {@code folded[i]} must be fold(all.get(i).name). Ties keep the order of {@code all} (name order). */
-    public static List<Channel> run(List<Channel> all, String[] folded, String query, Set<String> favs) {
+    public static List<Channel> run(List<Channel> all, String[] folded, String query) {
         String q = fold(query).trim().replaceAll("\\s+", " ");
         List<Channel> out = new ArrayList<>();
         if (q.isEmpty()) return out;
@@ -45,7 +44,7 @@ public final class Search {
                 for (int j = at; j > 0; j = f.indexOf(q, j + 1)) if (f.charAt(j - 1) == ' ') { tier = 2; break; }
             }
             Channel c = all.get(i);
-            int score = tier * 4 - (favs.contains(c.url) ? 2 : 0) - (c.country.equals("lk") ? 1 : 0) + 3; // +3 keeps it positive
+            int score = tier * 4 - (c.country.equals("lk") ? 1 : 0) + 3; // +3 keeps it positive
             keys[n++] = ((long) score << 32) | i;
         }
         Arrays.sort(keys, 0, n);

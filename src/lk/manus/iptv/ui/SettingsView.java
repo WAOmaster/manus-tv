@@ -1,6 +1,7 @@
 package lk.manus.iptv.ui;
 
 import android.content.Context;
+import android.content.SharedPreferences;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.text.Editable;
@@ -22,6 +23,7 @@ import android.widget.LinearLayout;
 import android.widget.ListView;
 import android.widget.TextView;
 
+import java.io.File;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
@@ -30,11 +32,17 @@ import java.util.Set;
 
 import lk.manus.iptv.Config;
 import lk.manus.iptv.data.AddServer;
+import lk.manus.iptv.data.Backup;
+import lk.manus.iptv.data.BackupOps;
 import lk.manus.iptv.data.CloudData;
+import lk.manus.iptv.data.Db;
 import lk.manus.iptv.data.Index;
 import lk.manus.iptv.data.Redact;
 import lk.manus.iptv.data.Sources;
 import lk.manus.iptv.data.Store;
+import lk.manus.iptv.data.XtreamSource;
+import lk.manus.iptv.meta.MetaStore;
+import lk.manus.iptv.meta.Tmdb;
 
 /** Settings screen shown in the guide's column 2/3: Sources, Playback, For You, About. Big D-pad rows, simple page stack. */
 public final class SettingsView extends FrameLayout {
@@ -46,20 +54,25 @@ public final class SettingsView extends FrameLayout {
         void forYouChanged();    // For You picker closed with changes
         void countsChanged();    // a ranking setting changed: rail counts follow the visible channels
         void focusRail();
+        void openSources();      // T111c: My Sources (browse each source's folders) lives here now; the guide shows it in the menu column
         void recheckHidden();    // confirm, then reset TV-side DEAD to UNKNOWN
         void exit();             // ask to quit the app (the guide shows the confirm dialog)
         void pill(String text);  // short message at the bottom of the guide
         void showRemoteKeys();   // centred modals (owned by the guide)
         void showRemoteTest();
         void confirm(String title, String sub, String yes, String no, Runnable onYes); // centred modal; "no" has focus
+        void confirm3(String title, String sub, String b1, String b2, String b3, Runnable onB1, Runnable onB2);
         void restoreFavourites(List<String> urls);
         void edgesChanged();     // Screen edges moved: the guide re-lays out (and flashes the frame)
         void frame(boolean on);  // live preview frame of the safe area
+        void filmsChanged();     // the movie-database key was added or removed: the rail follows
+        void remindersChanged(); // a reminder was removed: the timer re-arms
+        void restored();         // a backup was restored: playlists, favourites, reminders and display settings are re-read, the guide opens on Home
     }
 
     private static final class Item {
         String label, sub = "", value = "";
-        boolean focusable = true, header, good, bad, preview;
+        boolean focusable = true, header, good, bad, preview, logo;
         Runnable act;
         Item(String l) { label = l; }
     }
@@ -89,12 +102,12 @@ public final class SettingsView extends FrameLayout {
     public SettingsView(Context ctx, Host host) {
         super(ctx);
         this.host = host;
-        setBackground(Ui.rect(0xB80B0F19, 18));
+        setBackground(Ui.card(0.94f, 18));
         setPadding(Ui.u(14), Ui.u(14), Ui.u(14), Ui.u(10));
         LinearLayout col = new LinearLayout(ctx);
         col.setOrientation(LinearLayout.VERTICAL);
-        title = Ui.tv(ctx, Ui.TITLE, Ui.TXT, true);
-        sub = Ui.tv(ctx, Ui.CAPTION, Ui.SEC, false);
+        title = Ui.tv(ctx, Ui.TITLE, Ui.PAPER, true);
+        sub = Ui.tv(ctx, Ui.CAPTION, Ui.MUTED, false);
         title.setPadding(Ui.u(14), Ui.u(4), 0, 0);
         sub.setPadding(Ui.u(14), Ui.u(3), 0, Ui.u(6));
         col.addView(title);
@@ -110,14 +123,26 @@ public final class SettingsView extends FrameLayout {
             @Override public int getCount() { return items.size(); }
             @Override public Object getItem(int i) { return items.get(i); }
             @Override public long getItemId(int i) { return i; }
-            @Override public int getViewTypeCount() { return 2; }
-            @Override public int getItemViewType(int i) { return items.get(i).header ? 1 : 0; }
+            @Override public int getViewTypeCount() { return 3; }
+            @Override public int getItemViewType(int i) { return items.get(i).header ? 1 : items.get(i).logo ? 2 : 0; }
             @Override public boolean areAllItemsEnabled() { return false; }
             @Override public boolean isEnabled(int i) { return items.get(i).focusable && !items.get(i).header; }
             @Override public View getView(int i, View v, ViewGroup p) {
                 Item it = items.get(i);
+                if (it.logo) { // the approved TMDB logo, unaltered, much smaller than our own banner
+                    if (v != null) return v;
+                    FrameLayout f = new FrameLayout(getContext());
+                    f.setLayoutParams(new AbsListView.LayoutParams(-1, Ui.u(34)));
+                    ImageView iv = new ImageView(getContext());
+                    iv.setImageResource(lk.manus.iptv.R.drawable.tmdb_logo);
+                    iv.setScaleType(ImageView.ScaleType.FIT_START);
+                    FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(Ui.u(110), Ui.u(110 * 35.52f / 273.42f), Gravity.CENTER_VERTICAL | Gravity.START);
+                    lp.leftMargin = Ui.u(16);
+                    f.addView(iv, lp);
+                    return f;
+                }
                 if (it.header) {
-                    TextView t = v instanceof TextView ? (TextView) v : Ui.tv(getContext(), Ui.MICRO, Ui.SEC, true);
+                    TextView t = v instanceof TextView ? (TextView) v : Ui.tv(getContext(), Ui.MICRO, Ui.MUTED, true);
                     t.setLayoutParams(new AbsListView.LayoutParams(-1, Ui.u(34)));
                     t.setPadding(Ui.u(16), Ui.u(14), 0, 0);
                     t.setText(it.label.toUpperCase(Locale.ROOT));
@@ -189,12 +214,16 @@ public final class SettingsView extends FrameLayout {
     /** Playlists were reloaded: redraw the current page (counts changed). */
     public void refresh() { if (getVisibility() == VISIBLE && !isForm()) render(); }
 
-    private boolean isForm() { return page.equals("add") || page.equals("rename") || page.equals("feed"); }
+    private boolean isForm() { return page.equals("add") || page.equals("rename") || page.equals("feed") || page.equals("filmkey") || page.equals("addxtream") || isBackupForm(); }
 
-    public boolean hasTextFocus() { return findFocus() instanceof EditText; }
+    private boolean isBackupForm() { return page.equals("bkup") || page.equals("rest") || page.equals("restpass"); }
+
+    /** True while the guide must not time out: a text box has focus, or a phone page is waiting for the phone (QR + code on screen). */
+    public boolean hasTextFocus() { return findFocus() instanceof EditText || server != null; }
 
     public void focusContent() {
-        if (isForm()) { if (urlEt != null) urlEt.requestFocus(); else nameEt.requestFocus(); }
+        if (page.equals("filmkey") || page.equals("addxtream") || isBackupForm()) btn.requestFocus();
+        else if (isForm()) { if (urlEt != null) urlEt.requestFocus(); else nameEt.requestFocus(); }
         else list.requestFocus();
     }
 
@@ -207,6 +236,10 @@ public final class SettingsView extends FrameLayout {
         String[] p = stack.get(stack.size() - 1);
         page = p[0];
         render();
+        if (!isForm() && p.length > 2 && !p[2].isEmpty()) { // T101: back lands on the row the viewer left, not the top
+            int at = Integer.parseInt(p[2]);
+            if (at >= 0 && at < items.size() && items.get(at).focusable) list.setSelection(at);
+        }
         if (had) focusContent();
         return true;
     }
@@ -218,7 +251,8 @@ public final class SettingsView extends FrameLayout {
     private void go(String p, String arg) {
         boolean had = hasFocus(); // only pull focus in when the user is already inside settings
         leave();
-        stack.add(new String[]{p, arg});
+        if (!stack.isEmpty()) stack.get(stack.size() - 1)[2] = String.valueOf(list.getSelectedItemPosition()); // T101: remember the row we leave
+        stack.add(new String[]{p, arg, ""});
         page = p;
         render();
         if (had) focusContent();
@@ -252,9 +286,14 @@ public final class SettingsView extends FrameLayout {
             case "root": root(); break;
             case "sources": sourcesPage(); break;
             case "src": srcPage(); break;
+            case "xsrc": xtreamSourcePage(); break;
             case "add": addPage(); break;
+            case "addxtream": addXtreamPage(); break;
             case "rename": renamePage(); break;
             case "feed": feedPage(); break;
+            case "film": filmPage(); break;
+            case "reminders": remindersPage(); break;
+            case "filmkey": filmKeyPage(); break;
             case "foryou": forYouPage(); break;
             case "fycountries": pickPage(true); break;
             case "fycats": pickPage(false); break;
@@ -262,6 +301,11 @@ public final class SettingsView extends FrameLayout {
             case "trmodels": trModelsPage(); break;
             case "favsnaps": favSnapsPage(); break;
             case "favhist": favHistPage(); break;
+            case "backup": backupPage(); break;
+            case "bkup": backupFormPage(); break;
+            case "rest": restoreFormPage(""); break;
+            case "restfile": restoreFilePage(); break;
+            case "restpass": restoreFormPage(arg()); break;
             default: break;
         }
         ad.notifyDataSetChanged();
@@ -285,10 +329,15 @@ public final class SettingsView extends FrameLayout {
         final Store st = host.store();
         head("Settings", "Sources, playback and For You");
         header("Sources");
+        if (host.index().sources.size() > 1) row("My Sources", host.index().sources.size() + "  \u203a", new Runnable() { @Override public void run() { host.openSources(); } });
         List<Sources.Source> all = host.sources().list();
         int on = 0;
         for (Sources.Source s : all) if (s.enabled) on++;
         row("Playlist sources", on + " of " + all.size() + " on  ›", new Runnable() { @Override public void run() { go("sources", ""); } });
+        final Tmdb tm = Tmdb.get(getContext());
+        row("Film information", filmState(), new Runnable() { @Override public void run() { go("film", ""); } }).good = tm.hasKey();
+        int nrem = lk.manus.iptv.data.Reminders.list().size();
+        if (nrem > 0) row("Reminders", nrem + "  \u203a", new Runnable() { @Override public void run() { go("reminders", ""); } });
         header("Playback");
         final Item q = row("Picture quality", qualityName(st.quality()), null);
         q.act = new Runnable() {
@@ -390,6 +439,16 @@ public final class SettingsView extends FrameLayout {
                 ad.notifyDataSetChanged();
             }
         };
+        final Item sp = row("Hide plots of unwatched episodes", st.hideUnwatchedPlots() ? "On" : "Off", null);
+        sp.good = st.hideUnwatchedPlots();
+        sp.act = new Runnable() {
+            @Override public void run() {
+                st.setHideUnwatchedPlots(!st.hideUnwatchedPlots());
+                sp.value = st.hideUnwatchedPlots() ? "On" : "Off";
+                sp.good = st.hideUnwatchedPlots();
+                ad.notifyDataSetChanged();
+            }
+        };
         row("Re-check hidden channels", "", new Runnable() { @Override public void run() { host.recheckHidden(); } });
         header("Display");
         final String[] pv = {"off", "tl", "tr", "bl", "br"}, pn = {"Off", "Top-left", "Top-right", "Bottom-left", "Bottom-right"};
@@ -442,6 +501,7 @@ public final class SettingsView extends FrameLayout {
         row("Remote test", "›", new Runnable() { @Override public void run() { host.showRemoteTest(); } });
         header("Favourites");
         row("Restore favourites", "›", new Runnable() { @Override public void run() { go("favsnaps", ""); } });
+        row("Backup", "›", new Runnable() { @Override public void run() { go("backup", ""); } }).sub = "Favourites, playlists and settings in one file";
         header("For You");
         row("Run setup again", "›", new Runnable() {
             @Override public void run() { wizardRev = st.setupRev(); waitWizard = true; lk.manus.iptv.ui.wizard.Wizard.start(getContext()); }
@@ -472,8 +532,19 @@ public final class SettingsView extends FrameLayout {
             i.sub = counts(s) + "  ·  " + ago(s.ts);
             i.good = s.enabled;
         }
-        if (host.sources().list().isEmpty()) note("No channels yet \u2014 add a playlist below.");
+        final Db db = Db.get();
+        List<XtreamSource.SourceInfo> xlist = (!Config.PLAY && db != null) ? XtreamSource.list(db) : java.util.Collections.<XtreamSource.SourceInfo>emptyList();
+        if (!Config.PLAY) {
+            for (final XtreamSource.SourceInfo xs : xlist) {
+                Item i = row(xs.name, "›", new Runnable() { @Override public void run() { go("xsrc", String.valueOf(xs.id)); } });
+                i.sub = xs.filmCount + " " + (xs.filmCount == 1 ? "film" : "films") + "  ·  " + XtreamSource.syncStatus(xs.id, xs.lastSync);
+            }
+        }
+        if (host.sources().list().isEmpty() && xlist.isEmpty()) note("No channels yet \u2014 add a playlist below.");
         row("+ Add source", "", new Runnable() { @Override public void run() { go("add", ""); } }).good = true;
+        if (!Config.PLAY) {
+            row("Add an Xtream login", "", new Runnable() { @Override public void run() { go("addxtream", ""); } }).good = true;
+        }
     }
 
     private void srcPage() {
@@ -511,6 +582,103 @@ public final class SettingsView extends FrameLayout {
                 }
             };
         }
+    }
+
+    private void xtreamSourcePage() {
+        final Db db = Db.get();
+        long id = -1;
+        try { id = Long.parseLong(arg()); } catch (Exception ignored) {}
+        final XtreamSource.SourceInfo xs = (db != null && id >= 0) ? XtreamSource.get(db, id) : null;
+        if (xs == null) { back(); return; }
+
+        final String syncText = XtreamSource.syncStatus(xs.id, xs.lastSync);
+        head(xs.name, Redact.host(xs.address) + "  ·  " + xs.filmCount + " " + (xs.filmCount == 1 ? "film" : "films") + "  ·  " + syncText);
+
+        final Item syncItem = row("Sync now", "", null);
+        syncItem.act = new Runnable() {
+            @Override public void run() {
+                syncItem.value = "Syncing…";
+                ad.notifyDataSetChanged();
+                XtreamSource.sync(appCtx(), xs.id, new XtreamSource.Listener() {
+                    @Override public void onProgress(final int films) {
+                        post(new Runnable() {
+                            @Override public void run() {
+                                if (page.equals("xsrc")) {
+                                    syncItem.sub = "Syncing films… " + films + " so far";
+                                    ad.notifyDataSetChanged();
+                                }
+                            }
+                        });
+                    }
+                    @Override public void onDone(final int films, final String err) {
+                        post(new Runnable() {
+                            @Override public void run() {
+                                host.filmsChanged();
+                                if (page.equals("xsrc")) render();
+                            }
+                        });
+                    }
+                });
+            }
+        };
+
+        final Item rmItem = row("Remove", "", null);
+        rmItem.bad = true;
+        rmItem.act = new Runnable() {
+            @Override public void run() {
+                final boolean hasProg = XtreamSource.hasProgress(db, xs.id);
+                if (!hasProg) {
+                    host.confirm("Remove this source? Its films will be deleted.", "", "Remove", "Cancel", new Runnable() {
+                        @Override public void run() {
+                            XtreamSource.remove(db, xs.id, false);
+                            host.filmsChanged();
+                            back();
+                        }
+                    });
+                } else {
+                    host.confirm3("You have watched films from this source. Keep your place in them?", "", "Keep my progress", "Delete progress", "Cancel",
+                            new Runnable() {
+                                @Override public void run() {
+                                    XtreamSource.remove(db, xs.id, false);
+                                    host.filmsChanged();
+                                    back();
+                                }
+                            },
+                            new Runnable() {
+                                @Override public void run() {
+                                    XtreamSource.remove(db, xs.id, true);
+                                    host.filmsChanged();
+                                    back();
+                                }
+                            });
+                }
+            }
+        };
+    }
+
+    private void addXtreamPage() {
+        head("Add an Xtream login", "Open the address on your phone (same Wi-Fi)");
+        form.removeAllViews();
+        urlEt = null;
+        nameEt = null;
+        LinearLayout left = new LinearLayout(getContext());
+        left.setOrientation(LinearLayout.VERTICAL);
+        btn = button("Cancel");
+        left.addView(btn, new LinearLayout.LayoutParams(-1, Ui.u(52)));
+        btn.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { if (fresh(v)) back(); } });
+        form.addView(left, new LinearLayout.LayoutParams(0, -2, 1));
+
+        final Context ctx = appCtx();
+        pane(AddServer.forXtream(ctx, new AddServer.Listener() {
+            @Override public void onCode(String code) {
+                if (codeTv != null) codeTv.setText(code.substring(0, 3) + " " + code.substring(3));
+            }
+            @Override public void onReceived(String url, String name) {
+                host.pill("Added. Your films are loading on the TV.");
+                host.filmsChanged();
+                if (page.equals("addxtream")) back();
+            }
+        }));
     }
 
     private void forYouPage() {
@@ -568,6 +736,9 @@ public final class SettingsView extends FrameLayout {
         for (Sources.Source s : host.sources().list()) {
             row(s.name, (s.enabled ? "" : "off  ·  ") + counts(s), null);
         }
+        header("Film information");
+        Item lg = new Item(""); lg.logo = true; lg.focusable = false; items.add(lg);
+        note("This product uses the TMDB API but is not endorsed or certified by TMDB.");
         final CloudData cloud = CloudData.get(getContext());
         Item fd = row("Channel data feed", cloud.hasFeed() ? cloud.feedHost() + "  ›" : "Not set  ›", new Runnable() { @Override public void run() { go("feed", ""); } });
         if (!cloud.hasFeed()) { fd.sub = "Optional: add a channel data feed \u2014 see the guide"; return; }
@@ -646,6 +817,28 @@ public final class SettingsView extends FrameLayout {
     }
 
     /** T33: the last 200 adds / removes, newest first. */
+    /** Settings > Reminders: soonest first; OK asks before removing. */
+    private void remindersPage() {
+        head("Reminders", "Films you asked to be told about");
+        for (final lk.manus.iptv.data.Reminders.Item r : lk.manus.iptv.data.Reminders.list()) {
+            final String label = Films.join(CloudData.hm(r.startSec), r.title, r.channel);
+            row(label, "", new Runnable() {
+                @Override public void run() {
+                    host.confirm("Remove this reminder?", label, "Remove", "Keep", new Runnable() {
+                        @Override public void run() {
+                            lk.manus.iptv.data.Reminders.remove(r.key, r.startSec);
+                            host.remindersChanged();
+                            if (lk.manus.iptv.data.Reminders.list().isEmpty()) { back(); return; }
+                            int at = list.getSelectedItemPosition();
+                            render();
+                            list.setSelection(Math.max(first(), Math.min(at, items.size() - 1))); // keeps its place
+                        }
+                    });
+                }
+            });
+        }
+    }
+
     private void favHistPage() {
         head("Favourites history", "Last " + lk.manus.iptv.data.FavGuard.MAX_HIST + " changes, newest first");
         List<lk.manus.iptv.data.FavGuard.Event> ev = lk.manus.iptv.data.FavGuard.history();
@@ -668,13 +861,15 @@ public final class SettingsView extends FrameLayout {
         final EditText e = new EditText(getContext());
         e.setSingleLine(true);
         Ui.size(e, Ui.BODY);
-        e.setTextColor(Ui.TXT);
-        e.setHintTextColor(Ui.SEC);
+        e.setTextColor(Ui.PAPER);
+        e.setHintTextColor(Ui.MUTED);
         e.setHint(hint);
         e.setInputType(InputType.TYPE_CLASS_TEXT | type);
         e.setImeOptions(EditorInfo.IME_ACTION_NEXT | EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_FULLSCREEN);
         e.setPadding(Ui.u(16), Ui.u(10), Ui.u(16), Ui.u(10));
-        e.setBackground(focusBg(0xFF0B0F19, 0xFF141A2A));
+        android.graphics.drawable.GradientDrawable ib = Ui.rect(Ui.INK, 14);
+        ib.setStroke(Math.max(1, Ui.u(1)), Ui.LINE);
+        e.setBackground(focusBg(ib));
         e.setOnKeyListener(new OnKeyListener() {
             @Override public boolean onKey(View v, int k, KeyEvent ev) {
                 if (k == KeyEvent.KEYCODE_DPAD_CENTER) {
@@ -701,26 +896,26 @@ public final class SettingsView extends FrameLayout {
         return e;
     }
 
-    private static StateListDrawable focusBg(int focusedFill, int idleFill) {
+    private static StateListDrawable focusBg(android.graphics.drawable.Drawable idle) {
         StateListDrawable s = new StateListDrawable();
-        s.addState(new int[]{android.R.attr.state_focused}, Ui.ring(focusedFill));
-        s.addState(new int[]{}, Ui.rect(idleFill, 14));
+        s.addState(new int[]{android.R.attr.state_focused}, Ui.ring());
+        s.addState(new int[]{}, idle);
         return s;
     }
 
     private TextView label(String t) {
-        TextView l = Ui.tv(getContext(), Ui.CAPTION, Ui.SEC, false);
+        TextView l = Ui.tv(getContext(), Ui.CAPTION, Ui.MUTED, false);
         l.setText(t);
         l.setPadding(Ui.u(4), Ui.u(10), 0, Ui.u(4));
         return l;
     }
 
     private TextView button(String t) {
-        TextView b = Ui.tv(getContext(), Ui.BODY, Ui.TXT, true);
+        TextView b = Ui.tv(getContext(), Ui.BODY, Ui.PAPER, true);
         b.setText(t);
         b.setGravity(Gravity.CENTER);
         b.setFocusable(true);
-        b.setBackground(focusBg(Ui.SURF, 0x66141A2A));
+        b.setBackground(focusBg(Ui.card(1f, 14)));
         b.setOnKeyListener(new OnKeyListener() {
             @Override public boolean onKey(View v, int k, KeyEvent ev) {
                 if (k == KeyEvent.KEYCODE_DPAD_LEFT) { if (ev.getAction() == KeyEvent.ACTION_DOWN && ev.getRepeatCount() == 0) leftOut(); return true; }
@@ -755,7 +950,7 @@ public final class SettingsView extends FrameLayout {
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, Ui.u(52));
         bl.topMargin = Ui.u(18);
         left.addView(btn, bl);
-        status = Ui.tv(getContext(), Ui.BODY, Ui.SEC, false);
+        status = Ui.tv(getContext(), Ui.BODY, Ui.MUTED, false);
         status.setSingleLine(false);
         status.setPadding(Ui.u(4), Ui.u(12), 0, 0);
         left.addView(status);
@@ -777,7 +972,7 @@ public final class SettingsView extends FrameLayout {
                 nameEt.setText(name);
                 check();
             }
-        }, false);
+        }, false, null);
     }
 
     private TextView suggest(String text, final String url, final String name) {
@@ -791,25 +986,27 @@ public final class SettingsView extends FrameLayout {
     }
 
     /** The phone side of a form page: QR + address + one-time code on the right, and the phone server that feeds {@code l}. */
-    private void phonePane(AddServer.Listener l, boolean feed) {
+    private void phonePane(AddServer.Listener l, boolean feed, AddServer.KeyCheck kc) { pane(kc != null ? new AddServer(l, kc) : new AddServer(l, feed)); }
+
+    private void pane(AddServer s) {
         LinearLayout right = new LinearLayout(getContext());
         right.setOrientation(LinearLayout.VERTICAL);
         right.setGravity(Gravity.CENTER_HORIZONTAL);
         right.setPadding(Ui.u(24), 0, 0, 0);
         right.addView(label("From your phone (same Wi-Fi)"));
         qr = new ImageView(getContext());
-        qr.setBackground(Ui.rect(0xFFFFFFFF, 10));
+        qr.setBackground(Ui.rect(Ui.PAPER, 10));
         right.addView(qr, new LinearLayout.LayoutParams(Ui.u(170), Ui.u(170)));
-        final TextView addr = Ui.tv(getContext(), Ui.CAPTION, Ui.CYAN, true);
+        final TextView addr = Ui.tv(getContext(), Ui.CAPTION, Ui.PAPER, true);
         addr.setPadding(0, Ui.u(8), 0, 0);
         right.addView(addr);
         TextView cl = label("Code to type on the phone");
         right.addView(cl);
-        codeTv = Ui.tv(getContext(), Ui.DISPLAY, Ui.TXT, true);
+        codeTv = Ui.tv(getContext(), Ui.DISPLAY, Ui.PAPER, true);
         right.addView(codeTv);
         form.addView(right, new LinearLayout.LayoutParams(Ui.u(250), -2));
 
-        server = new AddServer(l, feed);
+        server = s;
         if (server.start() && server.address() != null) {
             addr.setText(server.address());
             qr.setImageBitmap(Qr.bitmap(server.address(), Ui.u(170)));
@@ -832,9 +1029,9 @@ public final class SettingsView extends FrameLayout {
 
     private void check() {
         final String u = urlEt.getText().toString().trim();
-        if (u.isEmpty()) { status.setTextColor(Ui.BAD); status.setText("Type or paste a link first."); return; }
+        if (u.isEmpty()) { status.setTextColor(Ui.WARN); status.setText("Type or paste a link first."); return; }
         hideIme();
-        status.setTextColor(Ui.SEC);
+        status.setTextColor(Ui.MUTED);
         status.setText("Checking…");
         final int g = ++probeGen;
         final Sources src = host.sources();
@@ -844,9 +1041,9 @@ public final class SettingsView extends FrameLayout {
                 post(new Runnable() {
                     @Override public void run() {
                         if (g != probeGen || !page.equals("add")) { src.discard(p); return; }
-                        if (p.error != null) { status.setTextColor(Ui.BAD); status.setText(p.error); return; }
+                        if (p.error != null) { status.setTextColor(Ui.WARN); status.setText(p.error); return; }
                         pending = p;
-                        status.setTextColor(Ui.CYAN);
+                        status.setTextColor(Ui.PAPER);
                         status.setText(nf.format(p.count) + " channels found");
                         btn.setText("Save");
                         status.setText(nf.format(p.count) + " channels found. Move down to Save, or press Back to cancel.");
@@ -900,7 +1097,7 @@ public final class SettingsView extends FrameLayout {
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(-1, Ui.u(52));
         bl.topMargin = Ui.u(18);
         left.addView(btn, bl);
-        status = Ui.tv(getContext(), Ui.BODY, Ui.SEC, false);
+        status = Ui.tv(getContext(), Ui.BODY, Ui.MUTED, false);
         status.setSingleLine(false);
         status.setPadding(Ui.u(4), Ui.u(12), 0, 0);
         urlEt.setOnEditorActionListener(new TextView.OnEditorActionListener() {
@@ -912,7 +1109,7 @@ public final class SettingsView extends FrameLayout {
             clear.setOnClickListener(new OnClickListener() {
                 @Override public void onClick(View v) {
                     if (!fresh(v)) return;
-                    status.setTextColor(Ui.SEC);
+                    status.setTextColor(Ui.MUTED);
                     status.setText("Clearing\u2026");
                     cloud.clearFeed(new Runnable() { @Override public void run() { post(new Runnable() { @Override public void run() { feedDone("Channel data feed cleared"); } }); } });
                 }
@@ -926,21 +1123,21 @@ public final class SettingsView extends FrameLayout {
         phonePane(new AddServer.Listener() {
             @Override public void onCode(String code) { if (codeTv != null) codeTv.setText(code.substring(0, 3) + " " + code.substring(3)); }
             @Override public void onReceived(String url, String name) { urlEt.setText(url); saveFeed(); }
-        }, true);
+        }, true, null);
     }
 
     private void saveFeed() {
         String u = urlEt.getText().toString().trim();
-        if (u.isEmpty()) { status.setTextColor(Ui.BAD); status.setText("Type or paste a link first."); return; }
+        if (u.isEmpty()) { status.setTextColor(Ui.WARN); status.setText("Type or paste a link first."); return; }
         hideIme();
-        status.setTextColor(Ui.SEC);
+        status.setTextColor(Ui.MUTED);
         status.setText("Checking\u2026");
         CloudData.get(getContext()).setFeed(u, new java.util.function.Consumer<String>() {
             @Override public void accept(final String err) {
                 post(new Runnable() {
                     @Override public void run() {
                         if (!page.equals("feed")) return;
-                        if (err != null) { status.setTextColor(Ui.BAD); status.setText(err); return; }
+                        if (err != null) { status.setTextColor(Ui.WARN); status.setText(err); return; }
                         feedDone("Channel data feed saved");
                     }
                 });
@@ -956,6 +1153,175 @@ public final class SettingsView extends FrameLayout {
         back();
     }
 
+    // ---- film information (movie-database key) ----
+
+    private String filmState() {
+        Tmdb t = Tmdb.get(getContext());
+        return t.hasOwnKey() ? "Your key" : t.hasKey() ? "Built in" : "Off";
+    }
+
+    private void filmPage() {
+        final Tmdb t = Tmdb.get(getContext());
+        head("Film information", filmState());
+        row("Add from phone", "›", new Runnable() { @Override public void run() { go("filmkey", ""); } });
+        if (t.hasOwnKey()) {
+            row("Remove key", "", new Runnable() {
+                @Override public void run() {
+                    host.confirm("Remove the key and delete saved film details?", "", "Remove", "Keep", new Runnable() {
+                        @Override public void run() {
+                            t.clearKey();
+                            MetaStore.get(getContext()).wipe();
+                            host.filmsChanged();
+                            if (page.equals("film")) render();
+                        }
+                    });
+                }
+            }).bad = true;
+        }
+    }
+
+    /** The phone page for the key: QR, address and one-time code. The key is saved only after TMDB accepts it (one request, on the server thread). */
+    private void filmKeyPage() {
+        head("Add from phone", "");
+        form.removeAllViews();
+        urlEt = null;
+        nameEt = null;
+        LinearLayout left = new LinearLayout(getContext());
+        left.setOrientation(LinearLayout.VERTICAL);
+        btn = button("Cancel");
+        left.addView(btn, new LinearLayout.LayoutParams(-1, Ui.u(52)));
+        btn.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { if (fresh(v)) back(); } });
+        form.addView(left, new LinearLayout.LayoutParams(0, -2, 1));
+        final Context ctx = getContext().getApplicationContext();
+        phonePane(new AddServer.Listener() {
+            @Override public void onCode(String code) { if (codeTv != null) codeTv.setText(code.substring(0, 3) + " " + code.substring(3)); }
+            @Override public void onReceived(String url, String name) {
+                host.filmsChanged();
+                if (page.equals("filmkey")) back();
+            }
+        }, false, new AddServer.KeyCheck() {
+            @Override public String accept(String key) {
+                Tmdb t = Tmdb.get(ctx);
+                int r = t.verify(key);
+                if (r == 0) return "That key was not accepted.";
+                if (r < 0) return "Could not reach the movie database. Try again.";
+                t.setKey(key);
+                return null;
+            }
+        });
+    }
+
+    // ---- backup and restore (T72) ----
+
+    private Context appCtx() { return getContext().getApplicationContext(); }
+
+    private void backupPage() {
+        head("Backup", "Favourites, playlists and settings, in one file only you can open");
+        row("Back up", "\u203a", new Runnable() { @Override public void run() { go("bkup", ""); } });
+        row("Restore", "\u203a", new Runnable() { @Override public void run() { go("rest", ""); } });
+        if (!BackupOps.localCopies(appCtx()).isEmpty()) row("Restore from this TV", "\u203a", new Runnable() { @Override public void run() { go("restfile", ""); } });
+        long t = BackupOps.lastBackupMs(appCtx());
+        note(t == 0 ? "No backup yet" : "Last backup: " + BackupOps.when(t));
+    }
+
+    private void restoreFilePage() {
+        head("Restore from this TV", "Copies kept on this TV");
+        for (final File f : BackupOps.localCopies(appCtx())) {
+            row(BackupOps.when(f.lastModified()), (f.length() + 1023) / 1024 + " KB  \u203a", new Runnable() { @Override public void run() { go("restpass", f.getName()); } });
+        }
+    }
+
+    /** What the phone page asks the TV to do. Runs on the phone server's thread. */
+    private AddServer.BackupHooks hooks(final String localName) {
+        final Context ctx = appCtx();
+        final SharedPreferences p = ctx.getSharedPreferences("iptv", Context.MODE_PRIVATE);
+        final Store st = host.store();
+        final Sources src = host.sources();
+        return new AddServer.BackupHooks() {
+            @Override public AddServer.Download backup(char[] pass) throws AddServer.Refused { working(); return BackupOps.backup(ctx, p, st, src, pass); }
+            @Override public void restore(byte[] file, char[] pass) throws AddServer.Refused {
+                working();
+                final Backup.Data d = BackupOps.open(file != null ? file : BackupOps.readLocal(ctx, localName), pass); // decrypted and checked here; nothing is applied yet
+                post(new Runnable() { @Override public void run() { offerRestore(d); } });
+            }
+        };
+    }
+
+    /** The key derivation takes seconds on a slow TV: say so (quietly) instead of looking frozen. Server thread to main thread. */
+    private void working() { post(new Runnable() { @Override public void run() { host.pill("Working\u2026"); } }); }
+
+    private void backupFormShell(String t, String s, AddServer srv) {
+        head(t, s);
+        form.removeAllViews();
+        urlEt = null;
+        nameEt = null;
+        LinearLayout left = new LinearLayout(getContext());
+        left.setOrientation(LinearLayout.VERTICAL);
+        btn = button("Cancel");
+        left.addView(btn, new LinearLayout.LayoutParams(-1, Ui.u(52)));
+        btn.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { if (fresh(v)) back(); } });
+        form.addView(left, new LinearLayout.LayoutParams(0, -2, 1));
+        pane(srv);
+    }
+
+    private AddServer.Listener codeOnly(final AddServer.Listener inner) {
+        return new AddServer.Listener() {
+            @Override public void onCode(String code) { if (codeTv != null) codeTv.setText(code.substring(0, 3) + " " + code.substring(3)); }
+            @Override public void onReceived(String a, String b) { if (inner != null) inner.onReceived(a, b); }
+        };
+    }
+
+    private void backupFormPage() {
+        backupFormShell("Back up", "On your phone: choose a passphrase. You will need it to restore.", AddServer.forBackup(codeOnly(new AddServer.Listener() {
+            @Override public void onCode(String code) { }
+            @Override public void onReceived(String file, String info) { // the phone has the file; info = "kept:N" or ":N"
+                int n = Integer.parseInt(info.substring(info.indexOf(':') + 1));
+                host.pill((info.startsWith("kept") ? "Backup saved." : "Backup made, but this TV could not keep a copy.") + (n == 0 ? "" : " " + n + (n == 1 ? " item" : " items") + " could not be included."));
+                if (page.equals("bkup")) toBackupPage();
+            }
+        }), hooks(null)));
+    }
+
+    /** localName "" = a file from the phone; else the name of a copy kept on this TV. */
+    private void restoreFormPage(String localName) {
+        boolean local = !localName.isEmpty();
+        backupFormShell("Restore", local ? "On your phone: type the passphrase of the backup from " + BackupOps.when(new File(appCtx().getFilesDir(), "backup/" + localName).lastModified()) + "."
+                : "On your phone: choose the backup file and type its passphrase.", AddServer.forRestore(codeOnly(null), hooks(local ? localName : null), local));
+    }
+
+    private void toBackupPage() { while (!page.equals("backup") && back()) { } }
+
+    /** A backup was opened (right passphrase, valid file). Nothing changes until Restore is pressed; Cancel is focused. */
+    private void offerRestore(final Backup.Data d) {
+        if (getVisibility() != VISIBLE || !(page.equals("rest") || page.equals("restpass"))) return; // left the page meanwhile: nothing is offered
+        toBackupPage();
+        int f = d.favs.size(), s = d.sources.size();
+        host.confirm("Restore " + f + (f == 1 ? " favourite" : " favourites") + " and " + s + (s == 1 ? " playlist" : " playlists") + "?",
+                "This replaces what is on this TV.", "Restore", "Cancel", new Runnable() { @Override public void run() { applyRestore(d); } });
+    }
+
+    private void applyRestore(final Backup.Data d) {
+        host.pill("Restoring\u2026");
+        final Context ctx = appCtx();
+        final SharedPreferences p = ctx.getSharedPreferences("iptv", Context.MODE_PRIVATE);
+        final Store st = host.store();
+        final Sources src = host.sources();
+        new Thread(new Runnable() {
+            @Override public void run() {
+                boolean ok = false;
+                try { BackupOps.restore(ctx, p, st, src, d); ok = true; }
+                catch (Exception e) { android.util.Log.w("IPTV", "restore failed: " + e.getClass().getSimpleName()); } // class only
+                final boolean done = ok;
+                post(new Runnable() {
+                    @Override public void run() {
+                        if (done) { host.restored(); host.pill("Restored."); if (getVisibility() == VISIBLE && !isForm()) render(); }
+                        else host.pill("Could not restore. Nothing was changed.");
+                    }
+                });
+            }
+        }, "restore").start();
+    }
+
     // ---- row ----
 
     private final class SRow extends LinearLayout {
@@ -967,29 +1333,29 @@ public final class SettingsView extends FrameLayout {
             setLayoutParams(new AbsListView.LayoutParams(-1, Ui.u(62)));
             setPadding(Ui.u(16), 0, Ui.u(18), 0);
             StateListDrawable sl = new StateListDrawable();
-            sl.addState(new int[]{android.R.attr.state_selected}, Ui.ring(Ui.SURF));
+            sl.addState(new int[]{android.R.attr.state_selected}, Ui.ring());
             sl.addState(new int[]{}, new ColorDrawable(0));
             setBackground(sl);
             LinearLayout col = new LinearLayout(c);
             col.setOrientation(VERTICAL);
-            label = Ui.tv(c, Ui.BODY, Ui.TXT, true);
-            subT = Ui.tv(c, Ui.CAPTION, Ui.SEC, false);
+            label = Ui.tv(c, Ui.BODY, Ui.PAPER, true);
+            subT = Ui.tv(c, Ui.CAPTION, Ui.MUTED, false);
             subT.setPadding(0, Ui.u(3), 0, 0);
             col.addView(label);
             col.addView(subT);
-            value = Ui.tv(c, Ui.BODY, Ui.SEC, true);
+            value = Ui.tv(c, Ui.BODY, Ui.MUTED, true);
             addView(col, new LinearLayout.LayoutParams(0, -2, 1));
             addView(value);
         }
         void bind(Item it) {
             label.setText(it.label);
-            label.setTextColor(it.bad ? Ui.BAD : Ui.TXT);
+            label.setTextColor(it.bad ? Ui.WARN : Ui.PAPER);
             subT.setText(it.sub);
             subT.setVisibility(it.sub.isEmpty() ? GONE : VISIBLE);
-            subT.setTextColor(it.sub.startsWith("Keep") ? Ui.BAD : Ui.SEC);
+            subT.setTextColor(it.sub.startsWith("Keep") ? Ui.WARN : Ui.MUTED);
             value.setText(it.value);
-            value.setTextColor(it.good && !it.value.equals("OFF") && !it.value.equals("Off") ? Ui.CYAN : Ui.SEC);
-            label.setTextColor(it.focusable ? (it.bad ? Ui.BAD : Ui.TXT) : Ui.SEC);
+            value.setTextColor(it.good && !it.value.equals("OFF") && !it.value.equals("Off") ? Ui.PAPER : Ui.MUTED);
+            label.setTextColor(it.focusable ? (it.bad ? Ui.WARN : Ui.PAPER) : Ui.MUTED);
             label.setTypeface(it.focusable ? android.graphics.Typeface.DEFAULT_BOLD : android.graphics.Typeface.DEFAULT);
             label.setSingleLine(it.focusable);
             Ui.size(label, it.focusable ? Ui.BODY : Ui.CAPTION);

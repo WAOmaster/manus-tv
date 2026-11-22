@@ -1,0 +1,14 @@
+<resources>
+    <!-- Signal palette (UX-SPEC 5a): window = INK, system accent (cursor, selection) = SIGNAL -->
+    <style name="Theme.Manus" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        <item name="android:windowBackground">#FF050505</item>
+        <item name="android:colorBackground">#FF050505</item>
+        <item name="android:colorAccent">#FFE3262E</item>
+        <item name="android:colorControlActivated">#FFE3262E</item>
+        <item name="android:textColorHighlight">#66E3262E</item>
+    </style>
+    <!-- T105: theme used only while the app opens; PlayerActivity.onCreate switches to Theme.Manus -->
+    <style name="Theme.Manus.Splash" parent="Theme.Manus">
+        <item name="android:windowBackground">@drawable/splash_window</item>
+    </style>
+</resources>

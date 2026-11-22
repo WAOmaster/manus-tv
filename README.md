@@ -17,6 +17,18 @@ A fast, remote-friendly live-TV app for Android TV / Google TV. You add your own
 - No accounts, no ads, no analytics of our own. Your playlist links stay on your TV. (Google ML Kit, used for subtitle translation, sends anonymous diagnostics to Google; see the privacy policy.)
 - Website: https://tv.appcloudpro.com/ · [Privacy policy](https://tv.appcloudpro.com/privacy.html) · [Support](https://tv.appcloudpro.com/support.html)
 
+## New in 2.3
+
+![Manus TV 2.3 home](site/media/2.3/hero-16x9.png)
+
+- **Movies on now** and **Series on now**: what's playing right now on your channels, as posters with year and rating (needs your free TMDB key and a TV guide from your playlist or provider).
+- Details page, My list, reminders, Continue watching on the Google TV home screen.
+- Xtream logins, provider films and series, catch-up.
+- Previous channel, channel numbers, sleep timer, automatic fallback to a channel's next link.
+- Encrypted backup and restore through your phone.
+
+See the [release notes](https://github.com/WAOmaster/manus-tv/releases/latest).
+
 ## Features
 - Add playlists by typing, or send the link from your phone (scan the QR code on the TV; same Wi-Fi).
 - Many playlists merged; duplicates folded into one channel with several versions.
@@ -24,7 +36,7 @@ A fast, remote-friendly live-TV app for Android TV / Google TV. You add your own
 - Pause and rewind live TV where the stream allows it; automatic reconnect and skip of dead streams.
 - Subtitles: picks an English track, otherwise translates on the TV (Google ML Kit, models download once).
 - Optional **channel data feed** (see below): hides dead channels and shows "now / next" programmes.
-- Built with no Gradle: a small shell script (aapt2, javac, d8, apksigner). The app is about 8 MB.
+- Built with no Gradle: a small shell script (aapt2, javac, d8, apksigner). The universal APK is about 31 MB, mostly the on-device translation libraries.
 
 ## Two build flavours
 | Flavour | For | First run |
@@ -44,6 +56,7 @@ Build options (environment variables, or put them in a git-ignored `local.env`; 
 | Variable | Meaning | Default |
 |---|---|---|
 | `FLAVOR` | `play` or `full` | `play` |
+| `ABI` | single-ABI build: `armeabi-v7a` or `arm64-v8a` (produces `manus-tv-<abi>.apk`) | empty (universal `manus-tv.apk`) |
 | `FEED_URL` | channel data feed address built in as the default | empty (none) |
 | `DEFAULT_IPTVORG` | `1` = free iptv-org list pre-enabled (`full` only) | `0` |
 | `ANDROID_SDK` | Android SDK folder | `%LOCALAPPDATA%/Android/Sdk` |
@@ -85,6 +98,8 @@ The feed is just three small files on a web page, made daily by a GitHub Actions
 Builders can bake a default feed in with `FEED_URL`.
 
 ## Legal
+
+This product uses the TMDB API but is not endorsed or certified by TMDB. Film posters and images are the property of their owners.
 Manus TV contains no channels, streams or programme data and does not host or provide any content. Streams you play come from playlists you choose to add; make sure you are allowed to watch them where you live. The optional public list and any data feed are third-party projects with their own terms.
 
 Licence: Apache-2.0 (see [LICENSE](LICENSE) and [NOTICE](NOTICE)). Media3 is Apache-2.0, the QR library is MIT, ML Kit is under Google's terms; none of those binaries are stored in this repo (they are fetched when you build).

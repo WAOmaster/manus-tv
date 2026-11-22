@@ -1,7 +1,6 @@
 package lk.manus.iptv.ui;
 
 import android.graphics.Bitmap;
-import android.graphics.Color;
 
 import io.nayuki.qrcodegen.QrCode;
 
@@ -17,7 +16,7 @@ public final class Qr {
         for (int y = 0; y < n; y++) {
             for (int x = 0; x < n; x++) {
                 boolean dark = q.getModule(x - quiet, y - quiet);
-                for (int s = 0; s < scale; s++) row[x * scale + s] = dark ? 0xFF0B0F19 : Color.WHITE;
+                for (int s = 0; s < scale; s++) row[x * scale + s] = dark ? Ui.INK : Ui.PAPER;
             }
             for (int s = 0; s < scale; s++) b.setPixels(row, 0, n * scale, 0, y * scale + s, n * scale, 1);
         }

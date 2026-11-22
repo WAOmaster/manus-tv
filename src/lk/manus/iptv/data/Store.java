@@ -1,5 +1,6 @@
 package lk.manus.iptv.data;
 
+import android.content.Context;
 import android.content.SharedPreferences;
 
 import java.util.ArrayList;
@@ -10,14 +11,23 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
-/** Favourites (ordered) and recents (max 15, newest first) as newline-joined URL lists in SharedPreferences. */
+/**
+ * Favourites (ordered) and recents (max 15, newest first), play counts and per-channel choices. Once {@link Db} is up (migrated from the old
+ * SharedPreferences strings, T54) they live in catalogue.db; if it is unavailable the old newline-joined preference strings are used exactly as before.
+ * Plain settings always stay in SharedPreferences.
+ */
 public final class Store {
     private static final int MAX_RECENT = 15;
     private final SharedPreferences p;
 
     public Store(SharedPreferences p) { this.p = p; }
 
+    public static Store get(Context ctx) {
+        return new Store(ctx.getSharedPreferences("iptv", Context.MODE_PRIVATE));
+    }
+
     private List<String> get(String k) {
+        if (k.equals("favs") || k.equals("recents")) { Db d = Db.get(); if (d != null) return d.list(k.equals("favs") ? "fav" : "recent"); }
         List<String> l = new ArrayList<>();
         String s = p.getString(k, "");
         if (!s.isEmpty()) for (String u : s.split("\n")) if (!u.isEmpty()) l.add(u);
@@ -26,7 +36,8 @@ public final class Store {
 
     private void put(String k, List<String> l) {
         if (k.equals("favs")) favCache = null;
-        p.edit().putString(k, String.join("\n", l)).apply();
+        if (k.equals("favs") || k.equals("recents")) { Db d = Db.get(); if (d != null) { d.putList(k.equals("favs") ? "fav" : "recent", l); return; } }
+        p.edit().putString(k, String.join("\n", l)).commit();
     }
 
     private Set<String> favCache;
@@ -48,6 +59,8 @@ public final class Store {
     private synchronized Map<String, long[]> plays() {
         if (plays != null) return plays;
         plays = new HashMap<>();
+        Db d = Db.get();
+        if (d != null) { plays.putAll(d.loadedPlays()); return plays; }
         for (String line : get("plays")) {
             String[] f = line.split("\t");
             if (f.length < 3) continue;
@@ -62,15 +75,29 @@ public final class Store {
         if (e == null) m.put(url, e = new long[2]);
         e[0]++;
         e[1] = System.currentTimeMillis();
+        List<String> evicted = new ArrayList<>();
         while (m.size() > MAX_PLAYS) { // drop the least recently watched
             String old = null;
             for (Map.Entry<String, long[]> x : m.entrySet()) if (old == null || x.getValue()[1] < m.get(old)[1]) old = x.getKey();
             m.remove(old);
+            evicted.add(old);
         }
+        Db d = Db.get();
+        if (d != null) { d.play(url, e[0], e[1], evicted); return; }
         List<String> l = new ArrayList<>(m.size());
         for (Map.Entry<String, long[]> x : m.entrySet()) l.add(x.getKey() + "\t" + x.getValue()[0] + "\t" + Long.toString(x.getValue()[1] / 1000, 36));
-        p.edit().putString("plays", String.join("\n", l)).apply();
+        p.edit().putString("plays", String.join("\n", l)).commit();
     }
+
+    /** T72: every play count right now (url -> {count, last played ms}), a copy, for a backup. */
+    public synchronized Map<String, long[]> playsSnapshot() {
+        Map<String, long[]> out = new HashMap<>();
+        for (Map.Entry<String, long[]> e : plays().entrySet()) out.put(e.getKey(), e.getValue().clone());
+        return out;
+    }
+
+    /** T72: after a restore replaced the database rows, forget what was cached from them (plays, favourite set, remembered versions). */
+    public synchronized void reloadAfterRestore() { plays = null; favCache = null; verCache = null; }
 
     public synchronized int playCount(String url) { long[] e = plays().get(url); return e == null ? 0 : (int) e[0]; }
     public synchronized long lastPlayedMs(String url) { long[] e = plays().get(url); return e == null ? 0 : e[1]; }
@@ -94,11 +121,15 @@ public final class Store {
     }
 
     private String kv(String k, String url) {
+        Db d = Db.get();
+        if (d != null) return d.choice(k, Keys.of(url));
         for (String line : get(k)) { int t = line.indexOf('\t'); if (t > 0 && line.substring(0, t).equals(url)) return line.substring(t + 1); }
         return "";
     }
 
     private void setKv(String k, String url, String val) {
+        Db d = Db.get();
+        if (d != null) { d.setChoice(k, Keys.of(url), val, 60); return; }
         List<String> l = new ArrayList<>();
         for (String line : get(k)) { int t = line.indexOf('\t'); if (t > 0 && !line.substring(0, t).equals(url)) l.add(line); }
         if (!val.isEmpty()) l.add(url + "\t" + val);
@@ -115,6 +146,17 @@ public final class Store {
         put("favs", l);
         FavGuard.log(add, name);
         return add;
+    }
+
+    /** Reorders the Favourites list: how 0 = up one, 1 = down one, 2 = to the top. Nothing is added or lost, so no snapshot. */
+    public void moveFav(String url, int how) {
+        List<String> l = favs();
+        int i = l.indexOf(url);
+        if (i < 0) return;
+        int j = how == 2 ? 0 : Math.max(0, Math.min(l.size() - 1, how == 0 ? i - 1 : i + 1));
+        if (j == i) return;
+        l.add(j, l.remove(i));
+        put("favs", l);
     }
 
     /** Replace the whole list (Settings > Restore favourites). The list as it was is snapshotted first, so a restore can be undone too. */
@@ -139,7 +181,7 @@ public final class Store {
     }
 
     public String section() { return p.getString("sec", "foryou"); }
-    public void setSection(String id) { p.edit().putString("sec", id).apply(); }
+    public void setSection(String id) { p.edit().putString("sec", id).commit(); }
 
     // ---- settings ----
 
@@ -148,39 +190,39 @@ public final class Store {
     public boolean qualityChosen() { return p.contains("quality"); }
     /** Settings > Display: safe-area margin in % (0-10) and performance mode (auto | smooth | rich). Read by Ui.init. */
     public int edge() { return p.getInt("edge_pct", 5); }
-    public void setEdge(int pct) { p.edit().putInt("edge_pct", pct).apply(); }
+    public void setEdge(int pct) { p.edit().putInt("edge_pct", pct).commit(); }
     public String perf() { return p.getString("perf", "auto"); }
-    public void setPerf(String v) { p.edit().putString("perf", v).apply(); }
-    public void setQuality(String q) { p.edit().putString("quality", q).apply(); }
+    public void setPerf(String v) { p.edit().putString("perf", v).commit(); }
+    public void setQuality(String q) { p.edit().putString("quality", q).commit(); }
     public boolean mirror() { return p.getBoolean("mirror_mode", false); }
-    public void setMirror(boolean on) { p.edit().putBoolean("mirror_mode", on).apply(); }
+    public void setMirror(boolean on) { p.edit().putBoolean("mirror_mode", on).commit(); }
 
     /** Settings > Playback: show channels known to be dead (greyed at the end of each list). */
     public boolean showUnavail() { return p.getBoolean("show_unavail", false); }
-    public void setShowUnavail(boolean on) { p.edit().putBoolean("show_unavail", on).apply(); }
+    public void setShowUnavail(boolean on) { p.edit().putBoolean("show_unavail", on).commit(); }
 
     /** Settings > Playback: the video behind the guide follows the row you rest on (off = only OK switches channel). */
     /** Mini preview in the guide card (T38): Auto (on when the TV can run two decoders) or Off. Replaces "Live preview while browsing". */
     public boolean miniAuto() { return !"off".equals(p.getString("mini_mode", "auto")); }
-    public void setMiniAuto(boolean on) { p.edit().putString("mini_mode", on ? "auto" : "off").remove("mini_blocked").apply(); } // choosing Auto again retries
+    public void setMiniAuto(boolean on) { p.edit().putString("mini_mode", on ? "auto" : "off").remove("mini_blocked").commit(); } // choosing Auto again retries
     /** Why Auto switched itself off on this TV ("" = never); remembered. */
     public String miniBlocked() { return p.getString("mini_blocked", ""); }
-    public void setMiniBlocked(String why) { p.edit().putString("mini_blocked", why).apply(); }
+    public void setMiniBlocked(String why) { p.edit().putString("mini_blocked", why).commit(); }
 
     /** Corner watermark (T18): off | tl | tr | bl | br, and when it shows: change (8 s after a channel change) | always. */
     public String wmPos() { return p.getString("wm_pos", "off"); }
-    public void setWmPos(String v) { p.edit().putString("wm_pos", v).apply(); }
+    public void setWmPos(String v) { p.edit().putString("wm_pos", v).commit(); }
     public String wmMode() { return p.getString("wm_mode", "change"); }
-    public void setWmMode(String v) { p.edit().putString("wm_mode", v).apply(); }
+    public void setWmMode(String v) { p.edit().putString("wm_mode", v).commit(); }
 
 
     /** T27: "Skip channels that don't start" - off (default) shows a failure card instead of jumping on. */
     public boolean autoSkip() { return p.getBoolean("auto_skip", false); }
-    public void setAutoSkip(boolean on) { p.edit().putBoolean("auto_skip", on).apply(); }
+    public void setAutoSkip(boolean on) { p.edit().putBoolean("auto_skip", on).commit(); }
 
     /** T25: also merge the same channel name across countries/languages (default off). */
     public boolean crossLang() { return p.getBoolean("cross_lang", false); }
-    public void setCrossLang(boolean on) { p.edit().putBoolean("cross_lang", on).apply(); }
+    public void setCrossLang(boolean on) { p.edit().putBoolean("cross_lang", on).commit(); }
 
     // ---- remembered version per merged group: "vers" = key TAB url (keys from Dedup.choiceKeys), newest 200 kept ----
 
@@ -190,12 +232,16 @@ public final class Store {
     public synchronized Map<String, String> versionMap() {
         if (verCache == null) {
             verCache = new HashMap<>();
-            for (String line : get("vers")) { int t = line.indexOf('\t'); if (t > 0) verCache.put(line.substring(0, t), line.substring(t + 1)); }
+            Db d = Db.get();
+            if (d != null) verCache.putAll(d.choices("vers"));
+            else for (String line : get("vers")) { int t = line.indexOf('\t'); if (t > 0) verCache.put(line.substring(0, t), line.substring(t + 1)); }
         }
         return verCache;
     }
 
     public synchronized void chooseVersion(String[] keys, String url) {
+        Db d = Db.get();
+        if (d != null) { verCache = null; for (String k : keys) d.setChoice("vers", k, url, 200); return; }
         List<String> l = new ArrayList<>();
         for (String line : get("vers")) { int t = line.indexOf('\t'); if (t > 0 && !java.util.Arrays.asList(keys).contains(line.substring(0, t))) l.add(line); }
         for (String k : keys) l.add(k + "\t" + url);
@@ -207,41 +253,49 @@ public final class Store {
     /** For You picker; null-free, defaults to the original curated behaviour. */
     public Set<String> fyCountries() { return set("fy_countries", Curated.DEFAULT_COUNTRIES); }
     public Set<String> fyCats() { return set("fy_cats", Curated.DEFAULT_CATS); }
-    public void setFyCountries(Set<String> s) { p.edit().putString("fy_countries", String.join("\n", s)).apply(); }
-    public void setFyCats(Set<String> s) { p.edit().putString("fy_cats", String.join("\n", s)).apply(); }
-    public void resetFy() { p.edit().remove("fy_countries").remove("fy_cats").apply(); }
+    public void setFyCountries(Set<String> s) { p.edit().putString("fy_countries", String.join("\n", s)).commit(); }
+    public void setFyCats(Set<String> s) { p.edit().putString("fy_cats", String.join("\n", s)).commit(); }
+    public void resetFy() { p.edit().remove("fy_countries").remove("fy_cats").commit(); }
 
     /** Groups hidden from the sidebar's level-2 lists: "cc:jp", "cat:News". */
     public Set<String> hidden() { return set("hidden", new ArrayList<String>()); }
-    public void hide(String id) { Set<String> s = hidden(); s.add(id); p.edit().putString("hidden", String.join("\n", s)).apply(); }
-    public void unhide(String id) { Set<String> s = hidden(); s.remove(id); p.edit().putString("hidden", String.join("\n", s)).apply(); }
+    public void hide(String id) { Set<String> s = hidden(); s.add(id); p.edit().putString("hidden", String.join("\n", s)).commit(); }
+    public void unhide(String id) { Set<String> s = hidden(); s.remove(id); p.edit().putString("hidden", String.join("\n", s)).commit(); }
 
     // ---- T28 setup wizard ----
 
     /** First run = no prefs at all yet. An existing install (any pref present) never sees the wizard on its own. */
-    public boolean needsSetup() { return !p.contains("setup_done") && p.getAll().isEmpty(); }
+    public boolean needsSetup() {
+        if (p.contains("setup_done")) return false;
+        Map<String, ?> all = p.getAll();
+        return all.isEmpty() || (all.size() == 1 && all.containsKey("db_migrated")); // the database import flag alone is not "an existing install"
+    }
     public boolean setupDone() { return p.getBoolean("setup_done", false); }
     /** Bumped each time the wizard saves choices; Settings compares it after the wizard closes to refresh For You. */
     public int setupRev() { return p.getInt("setup_rev", 0); }
     public void markSetupDone(boolean changed) {
         SharedPreferences.Editor e = p.edit().putBoolean("setup_done", true);
         if (changed) e.putInt("setup_rev", setupRev() + 1);
-        e.apply();
+        e.commit();
     }
     public boolean fyCustom() { return p.contains("fy_countries") || p.contains("fy_cats"); }
     /** Languages watched (ranking boost, applied later). Empty = not asked. */
     public Set<String> langs() { return p.contains("langs") ? set("langs", new ArrayList<String>()) : null; }
-    public void setLangs(Set<String> s) { p.edit().putString("langs", String.join("\n", s)).apply(); }
+    public void setLangs(Set<String> s) { p.edit().putString("langs", String.join("\n", s)).commit(); }
     /** "Even out volume" (applied by a later task). */
     public boolean evenVolume() { return p.getBoolean("even_volume", true); }
-    public void setEvenVolume(boolean on) { p.edit().putBoolean("even_volume", on).apply(); }
+    public void setEvenVolume(boolean on) { p.edit().putBoolean("even_volume", on).commit(); }
     /** Subtitles on by default when a channel has them (applied by a later task). */
     public boolean subsDefault() { return p.getBoolean("subs_default", false); }
-    public void setSubsDefault(boolean on) { p.edit().putBoolean("subs_default", on).apply(); }
+    public void setSubsDefault(boolean on) { p.edit().putBoolean("subs_default", on).commit(); }
 
     /** T40: translate non-English subtitles to English on the TV (Auto) or show them as they are (Off). */
     public boolean subTranslate() { return p.getBoolean("sub_translate", true); }
-    public void setSubTranslate(boolean on) { p.edit().putBoolean("sub_translate", on).apply(); }
+    public void setSubTranslate(boolean on) { p.edit().putBoolean("sub_translate", on).commit(); }
+
+    /** T92e: spoiler setting: hide plots of unwatched episodes (default On). */
+    public boolean hideUnwatchedPlots() { return p.getBoolean("hide_unwatched_plots", true); }
+    public void setHideUnwatchedPlots(boolean on) { p.edit().putBoolean("hide_unwatched_plots", on).commit(); }
 
     private Set<String> set(String k, List<String> dflt) {
         if (!p.contains(k)) return new LinkedHashSet<>(dflt);

@@ -24,5 +24,16 @@ public final class YouTubeLive {
             new Entry("Swarnavahini", "UCaIc6SgS90ud_RgMSC6hW_w", null),
             new Entry("Hiru TV", "UCOtYyt7W5PmPnwQjWWF_Z-Q", null)));
 
+    /** Hands a YouTube link to the YouTube TV app, else to any app that opens it. False = nothing could open it. */
+    public static boolean open(android.content.Context c, String url) {
+        android.content.Intent i = new android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url));
+        try {
+            c.startActivity(new android.content.Intent(i).setPackage(TV_PACKAGE));
+            return true;
+        } catch (android.content.ActivityNotFoundException e) {
+            try { c.startActivity(i); return true; } catch (android.content.ActivityNotFoundException e2) { return false; }
+        }
+    }
+
     private YouTubeLive() { }
 }

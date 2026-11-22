@@ -15,8 +15,8 @@ public final class Ring extends View {
     public Ring(Context c) {
         super(c);
         float w = Ui.u(6);
-        track.setStyle(Paint.Style.STROKE); track.setStrokeWidth(w); track.setColor(0x33FFFFFF);
-        arc.setStyle(Paint.Style.STROKE); arc.setStrokeWidth(w); arc.setColor(Ui.CYAN); arc.setStrokeCap(Paint.Cap.ROUND);
+        track.setStyle(Paint.Style.STROKE); track.setStrokeWidth(w); track.setColor(Ui.LINE);
+        arc.setStyle(Paint.Style.STROKE); arc.setStrokeWidth(w); arc.setColor(Ui.SIGNAL); arc.setStrokeCap(Paint.Cap.ROUND);
     }
 
     public void set(float progress) { p = Math.max(0f, Math.min(1f, progress)); invalidate(); }

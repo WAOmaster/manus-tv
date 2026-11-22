@@ -1,7 +1,5 @@
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import lk.manus.iptv.data.Channel;
 import lk.manus.iptv.data.Search;
@@ -29,15 +27,11 @@ public class SearchTest {
             ch("Newsroom", "", "u4"), ch("Rupavahini", "lk", "u5"), ch("Télé Rupa", "", "u6"), ch("Sky News", "lk", "u7"));
         String[] f = new String[all.size()];
         for (int i = 0; i < f.length; i++) f[i] = Search.fold(all.get(i).name);
-        Set<String> favs = new HashSet<>();
-        eq("tiers", "News,Newsroom,Sky News,Al News,Daily News Now", names(Search.run(all, f, "news", favs)));
-        eq("accent+case", "Rupavahini,Télé Rupa", names(Search.run(all, f, "RUPA", favs)));
-        eq("accent query", "Télé Rupa", names(Search.run(all, f, "tele", favs)));
-        favs.add("u2");
-        eq("fav boost", "News,Newsroom,Daily News Now,Sky News,Al News", names(Search.run(all, f, "news", favs)));
-        favs.add("u1");
-        eq("multi token", "Daily News Now", names(Search.run(all, f, "now daily", new HashSet<String>())));
-        eq("empty", "", names(Search.run(all, f, "  ", favs)));
+        eq("tiers", "News,Newsroom,Sky News,Al News,Daily News Now", names(Search.run(all, f, "news")));
+        eq("accent+case", "Rupavahini,Télé Rupa", names(Search.run(all, f, "RUPA")));
+        eq("accent query", "Télé Rupa", names(Search.run(all, f, "tele")));
+        eq("multi token", "Daily News Now", names(Search.run(all, f, "now daily")));
+        eq("empty", "", names(Search.run(all, f, "  ")));
         System.out.println(failures == 0 ? "SearchTest ok" : failures + " failures");
         if (failures > 0) System.exit(1);
     }

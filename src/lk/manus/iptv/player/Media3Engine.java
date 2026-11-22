@@ -80,10 +80,14 @@ public final class Media3Engine implements Engine {
     @Override public boolean smart() { return true; }
 
     @Override public void prepare(Channel c, String url, String quality, SurfaceHolder holder, Surface surface) {
+        prepare(c, url, quality, holder, surface, 0L);
+    }
+
+    @Override public void prepare(Channel c, String url, String quality, SurfaceHolder holder, Surface surface, long startPosMs) {
         DefaultHttpDataSource.Factory df = new DefaultHttpDataSource.Factory()
                 .setConnectTimeoutMs(8000).setReadTimeoutMs(8000).setAllowCrossProtocolRedirects(true);
-        if (!c.userAgent.isEmpty()) df.setUserAgent(c.userAgent);
-        if (!c.referrer.isEmpty()) { Map<String, String> hd = new HashMap<>(); hd.put("Referer", c.referrer); df.setDefaultRequestProperties(hd); }
+        if (c != null && !c.userAgent.isEmpty()) df.setUserAgent(c.userAgent);
+        if (c != null && !c.referrer.isEmpty()) { Map<String, String> hd = new HashMap<>(); hd.put("Referer", c.referrer); df.setDefaultRequestProperties(hd); }
         DefaultLoadControl lc = new DefaultLoadControl.Builder().setBufferDurationsMs(30000, 60000, 2500, 5000).build();
         p = new ExoPlayer.Builder(ctx, new DefaultRenderersFactory(ctx).setEnableDecoderFallback(true))
                 .setLoadControl(lc).setMediaSourceFactory(sources(df)).build();
@@ -138,7 +142,11 @@ public final class Media3Engine implements Engine {
         else if (low.contains(".mpd")) b.setMimeType(MimeTypes.APPLICATION_MPD);
         hlsGuess = !path.matches(".*\\.(ts|mp4|mkv|flv|mp3|aac|m3u8|mpd)$");
         item = b.build();
-        p.setMediaItem(item);
+        if (startPosMs > 0) {
+            p.setMediaItem(item, startPosMs);
+        } else {
+            p.setMediaItem(item);
+        }
         p.setPlayWhenReady(true);
         p.prepare();
     }
@@ -148,6 +156,17 @@ public final class Media3Engine implements Engine {
     private void error(PlaybackException e) {
         if (p == null) return;
         int c = e.errorCode;
+        Throwable cause = e.getCause();
+        boolean isAudio = (c == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
+                || c == PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED
+                || c == PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED
+                || c == PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED
+                || (cause != null && cause.getClass().getSimpleName().contains("Audio"))
+                || (cause != null && cause.getMessage() != null && cause.getMessage().toLowerCase(Locale.ROOT).contains("audio")));
+        if (isAudio) {
+            l.onUnsupportedAudio();
+            return;
+        }
         if (c == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW && behindRetries++ < 3) {
             Log.i(TAG, "media3: behind live window, re-preparing" + (wasPaused ? " from the oldest point" : ""));
             if (wasPaused) p.setMediaItem(item, 0L); else p.seekToDefaultPosition(); // after a long pause: the oldest point still available
@@ -167,6 +186,7 @@ public final class Media3Engine implements Engine {
 
     @Override public void play() { if (p != null) { p.play(); } }
     @Override public void pause() { if (p != null) { wasPaused = true; p.pause(); freezeSpeed(); } }
+    @Override public boolean isPlaying() { return p != null && p.isPlaying(); }
 
     /** A user pause / rewind must not be undone by the live catch-up speed-up. */
     private void freezeSpeed() { if (p != null) p.setPlaybackParameters(new PlaybackParameters(1f)); }
@@ -222,6 +242,12 @@ public final class Media3Engine implements Engine {
 
     @Override public long positionMs() { return p == null ? -1 : p.getCurrentPosition(); }
 
+    @Override public long durationMs() {
+        if (p == null) return -1;
+        long d = p.getDuration();
+        return d == C.TIME_UNSET ? -1 : d;
+    }
+
     @Override public long windowMs() { Timeline.Window w = liveWindow(); return w == null ? -1 : w.getDurationMs(); }
 
     /** How far the playhead is from the live end of the window (-1 = not a live window). */
@@ -235,9 +261,27 @@ public final class Media3Engine implements Engine {
         return Math.max(0, g - gap0);
     }
 
+    @Override public void seekTo(long positionMs) {
+        if (p == null) return;
+        long d = p.getDuration();
+        long to = Math.max(0, positionMs);
+        if (d != C.TIME_UNSET) to = Math.min(to, d);
+        freezeSpeed();
+        p.seekTo(to);
+    }
+
     @Override public void seekBy(long ms) {
         Timeline.Window w = liveWindow();
-        if (w == null) return;
+        if (w == null) {
+            if (p == null) return;
+            long cur = p.getCurrentPosition();
+            long d = p.getDuration();
+            long to = Math.max(0, cur + ms);
+            if (d != C.TIME_UNSET) to = Math.min(to, d);
+            freezeSpeed();
+            p.seekTo(to);
+            return;
+        }
         if (gap0 < 0) gap0 = gap();
         long to = Math.max(0, p.getCurrentPosition() + ms);
         if (ms > 0 && w.getDurationMs() - to - gap0 <= 1500) { goLive(); return; }

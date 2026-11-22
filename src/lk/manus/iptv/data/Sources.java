@@ -183,6 +183,43 @@ public final class Sources {
         save();
     }
 
+    /** T72: the sources a backup holds as {name, url}: every one except the built-in list when this build pre-enables it. */
+    public synchronized List<String[]> backupList() {
+        List<String[]> out = new ArrayList<>();
+        for (Source s : list) if (!(s.builtin() && Config.IPTVORG)) out.add(new String[]{s.name, urlOf(s)});
+        return out;
+    }
+
+    /** T72: the JSON for the "sources" preference after a restore: each {name, url} as a new, enabled, not-yet-loaded source. Pure: nothing is written. */
+    public static String restoreJson(List<String[]> nameUrl) {
+        JSONArray a = new JSONArray();
+        boolean usedDefault = false;
+        try {
+            for (String[] nu : nameUrl) {
+                boolean free = !Config.PLAY && !usedDefault && nu[1].equals(DEFAULT_URL); // the free list keeps its own id, as in add()
+                usedDefault |= free;
+                String id = free ? DEFAULT_ID : String.format("%08x", new Random().nextInt());
+                String n = nu[0].trim().isEmpty() ? (free ? FREE_NAME : Redact.host(nu[1])) : nu[0].trim();
+                a.put(new JSONObject().put("id", id).put("name", n).put("url", nu[1]).put("enabled", true).put("count", -1).put("ts", 0));
+            }
+        } catch (org.json.JSONException e) {
+            throw new IllegalStateException("sources not encoded");
+        }
+        return a.toString();
+    }
+
+    /** T72: after the "sources" preference was replaced: read it again and forget cached playlist files of sources that are gone. */
+    public synchronized void afterRestore() {
+        read();
+        Set<String> keep = new HashSet<>();
+        for (Source s : list) keep.add(s.id);
+        File[] fs = dir.listFiles();
+        if (fs != null) for (File f : fs) {
+            String n = f.getName();
+            if ((n.endsWith(".m3u") || n.endsWith(".etag")) && !keep.contains(n.substring(0, n.lastIndexOf('.')))) f.delete();
+        }
+    }
+
     /** Saves a link that already passed {@link #probe}; its downloaded copy becomes the cache. */
     public synchronized Source add(String name, Probe p) {
         boolean free = !Config.PLAY && p.url.equals(DEFAULT_URL) && get(DEFAULT_ID) == null; // the free list keeps its own id so it is read as iptv-org, not normalised
@@ -215,15 +252,17 @@ public final class Sources {
             @Override public void run() {
                 List<Source> snap = new ArrayList<>();
                 synchronized (Sources.this) { for (Source s : list) if (s.enabled) snap.add(s.copy()); }
-                if (snap.isEmpty()) { deliver(cb, g, snap, new LinkedHashMap<String, List<Channel>>()); return; } // no sources yet: an empty list, not an error
+                List<Channel> xt = new ArrayList<>(); // T95: Xtream live channels, read from the catalogue
+                try { xt = LiveSource.channels(Db.get()); } catch (Throwable t) { Log.w(TAG, "xtream live read failed: " + t.getClass().getSimpleName()); }
+                if (snap.isEmpty()) { deliver(cb, g, snap, new LinkedHashMap<String, List<Channel>>(), xt); return; } // no sources yet: an empty list, not an error
                 Map<String, List<Channel>> by = new LinkedHashMap<>();
                 Set<String> cached = new HashSet<>();
                 for (Source s : snap) {
                     List<Channel> l = parse(s);
                     if (l != null && !l.isEmpty()) { by.put(s.id, l); cached.add(s.id); }
                 }
-                boolean any = !by.isEmpty();
-                if (any) deliver(cb, g, snap, by);
+                boolean any = !by.isEmpty() || !xt.isEmpty();
+                if (any) deliver(cb, g, snap, by, xt);
                 boolean changed = false;
                 for (Source s : snap) {
                     try {
@@ -237,7 +276,7 @@ public final class Sources {
                         Log.w(TAG, "source " + s.name + " (" + Redact.host(urlOf(s)) + ") refresh failed: " + e.getClass().getSimpleName());
                     }
                 }
-                if (changed || (!any && !by.isEmpty())) { any = true; deliver(cb, g, snap, by); }
+                if (changed || (!any && !by.isEmpty())) { any = true; deliver(cb, g, snap, by, xt); }
                 if (!any) main.post(new Runnable() { @Override public void run() { if (g == gen) cb.onError(); } });
             }
         }, "sources").start();
@@ -248,7 +287,7 @@ public final class Sources {
         save();
     }
 
-    private void deliver(final Callback cb, final int g, List<Source> snap, Map<String, List<Channel>> by) {
+    private void deliver(final Callback cb, final int g, List<Source> snap, Map<String, List<Channel>> by, List<Channel> xt) {
         final List<Source> ordered = new ArrayList<>();
         final Map<String, List<Channel>> copy = new LinkedHashMap<>();
         final List<Channel> merged = new ArrayList<>();
@@ -260,6 +299,7 @@ public final class Sources {
             copy.put(s.id, l);
             for (Channel c : l) if (seen.add(c.url)) merged.add(c);
         }
+        for (Channel c : xt) if (seen.add(c.url)) merged.add(c);
         final Loaded loaded = new Loaded(merged, ordered, copy);
         main.post(new Runnable() { @Override public void run() { if (g == gen) cb.onLoaded(loaded); } });
     }

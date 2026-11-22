@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
-import android.graphics.drawable.LayerDrawable;
 import android.view.animation.DecelerateInterpolator;
 import android.widget.TextView;
 
@@ -12,8 +11,11 @@ import java.util.Locale;
 
 /** Shared palette + tiny view helpers. */
 public final class Ui {
-    public static final int GLASS = 0xEB0B0F19, SURF = 0xFF141A2A, TXT = 0xFFF5F7FF, SEC = 0xFF9AA4BF,
-            VIOLET = 0xFF7C5CFF, CYAN = 0xFF22D3EE, STAR = 0xFFFFC940, BAD = 0xFFFF7A7A;
+    // Signal palette (UX-SPEC 5a): black, warm white, one red. No other colour literals outside this file.
+    public static final int INK = 0xFF050505, PANEL = 0xFF121110, RAISED = 0xFF1E1C1A, LINE = 0xFF36322E,
+            PAPER = 0xFFF4F1EA, MUTED = 0xFFA8A29A, DIM = 0xFF6E6963, SIGNAL = 0xFFE3262E, GOLD = 0xFFF2B632, WARN = 0xFFF2B632;
+    /** Same colour at a given opacity (0..1). */
+    public static int alpha(int color, float a) { return (Math.round(a * 255) << 24) | (color & 0xFFFFFF); }
     public static final DecelerateInterpolator DEC = new DecelerateInterpolator();
     // ---- type roles (baseline dp, UX-SPEC 5) ----
     public static final float DISPLAY = 34, TITLE = 22, BODY = 18, CAPTION = 14, MICRO = 12;
@@ -96,13 +98,26 @@ public final class Ui {
         return g;
     }
 
-    /** Violet-to-cyan gradient border, 2dp thick, around a filled surface. */
-    public static Drawable ring(int fill) {
-        GradientDrawable o = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{VIOLET, CYAN});
-        o.setCornerRadius(u(14));
-        LayerDrawable l = new LayerDrawable(new Drawable[]{o, rect(fill, 12)});
-        l.setLayerInset(1, u(2), u(2), u(2), u(2));
-        return l;
+    /** Focus ring: solid 2dp SIGNAL outline on a RAISED surface. The only place SIGNAL outlines a box. */
+    public static Drawable ring() {
+        GradientDrawable g = rect(RAISED, 14);
+        g.setStroke(u(2), SIGNAL);
+        return g;
+    }
+
+    /** Popup / pill / toast: PANEL fill (opacity a) with a 1dp LINE border. */
+    public static Drawable card(float a, int radiusDp) {
+        GradientDrawable g = rect(alpha(PANEL, a), radiusDp);
+        g.setStroke(Math.max(1, u(1)), LINE);
+        return g;
+    }
+
+    /** Outline chip: 1dp LINE border, no fill. Pair with MUTED text. */
+    public static Drawable chip() {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(u(12));
+        g.setStroke(Math.max(1, u(1)), LINE);
+        return g;
     }
 
     /** role = one of the type roles above (baseline dp). */

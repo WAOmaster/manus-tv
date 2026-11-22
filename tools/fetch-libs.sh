@@ -16,7 +16,11 @@ while read -r sha url; do
            unzip -qo -j "$f" 'jni/armeabi-v7a/*.so' -d libs/native/lib/armeabi-v7a 2>/dev/null || true
            unzip -qo -j "$f" 'jni/arm64-v8a/*.so' -d libs/native/lib/arm64-v8a 2>/dev/null || true
            unzip -qo "$f" 'assets/*' -d libs/ 2>/dev/null || true
-           case $n in translate-*) unzip -qo -j "$f" 'res/raw/*' -d libs/res/raw; unzip -qo -j "$f" 'res/xml/*' -d libs/res/xml ;; esac ;;
+           case $n in translate-*) unzip -qo -j "$f" 'res/raw/*' -d libs/res/raw; unzip -qo -j "$f" 'res/xml/*' -d libs/res/xml ;; esac
+           case $n in core-1.9.0) mkdir -p libs/res/values && unzip -p "$f" 'res/values/values.xml' > libs/res/values/core.xml ;; esac
+            case $n in core-ktx-*) mkdir -p libs/res/values && unzip -p "$f" 'res/values/values.xml' > libs/res/values/core-ktx.xml ;; esac
+           case $n in recyclerview-*) mkdir -p libs/res/values && unzip -p "$f" 'res/values/values.xml' > libs/res/values/recyclerview.xml ;; esac
+           case $n in customview-poolingcontainer-*) mkdir -p libs/res/values && unzip -p "$f" 'res/values/values.xml' > libs/res/values/poolingcontainer.xml ;; esac ;;
     *.jar) cp "$f" libs/jars/ ;;
   esac
 done <<'LIST'
@@ -53,6 +57,11 @@ b6194f7b42034309cf8299784b2d5d70a82a2e9287fbe1650dea4d1f3ad1fe55 https://dl.goog
 114bdc1f47338a68bcbc95abf2f5cdc72beeec91812f2fcd7b521c1937876266 https://repo1.maven.org/maven2/com/squareup/okio/okio/1.6.0/okio-1.6.0.jar
 91c77044a50c481636c32d916fd89c9118a72195390452c81065080f957de7ff https://repo1.maven.org/maven2/javax/inject/javax.inject/1/javax.inject-1.jar
 7bad7a188804adea6fa1f35d5ef99b705f20bd93ecadde484760ff86b535fefc https://dl.google.com/android/maven2/androidx/lifecycle/lifecycle-common/2.0.0/lifecycle-common-2.0.0.jar
+005cf51510493a24fa48baae1a455a5258515391351a71717dd33cba95211966 https://dl.google.com/android/maven2/androidx/recyclerview/recyclerview/1.3.2/recyclerview-1.3.2.aar
+20e5b8f6526a34595a604f56718da81167c0b40a7a94a57daa355663f2594df2 https://dl.google.com/android/maven2/androidx/customview/customview/1.0.0/customview-1.0.0.aar
+3584102fc49bf399c56e3b7be4bfe12000c46112320cd8cf85cc0a8f93f3e752 https://dl.google.com/android/maven2/androidx/customview/customview-poolingcontainer/1.0.0/customview-poolingcontainer-1.0.0.aar
+03a5c3965cc37051128e64e46748e394b6bd4c97fa81c6de6fc72bfd44e3421b https://repo1.maven.org/maven2/org/jetbrains/kotlin/kotlin-stdlib/1.8.22/kotlin-stdlib-1.8.22.jar
+1542a1df7be908c95fee91b8dbc03fd974f53f11d84a85d881f95a52551c4051 https://dl.google.com/android/maven2/androidx/core/core-ktx/1.9.0/core-ktx-1.9.0.aar
 LIST
 # bundletool (only for tools/build-aab.sh; needs Java 17)
 BT_JAR=libs/dl/bundletool-all-1.18.1.jar

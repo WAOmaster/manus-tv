@@ -45,6 +45,10 @@ public final class MediaPlayerEngine implements Engine {
     @Override public boolean smart() { return false; }
 
     @Override public void prepare(Channel c, String url, String quality, SurfaceHolder holder, Surface surface) throws Exception {
+        prepare(c, url, quality, holder, surface, 0L);
+    }
+
+    @Override public void prepare(Channel c, String url, String quality, SurfaceHolder holder, Surface surface, final long startPosMs) throws Exception {
         final MediaPlayer m = new MediaPlayer();
         mp = m;
         m.setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
@@ -52,8 +56,8 @@ public final class MediaPlayerEngine implements Engine {
         lev.update(m.getAudioSessionId(), even);
         if (surface != null) m.setSurface(surface); else m.setDisplay(holder);
         Map<String, String> hd = new HashMap<>();
-        if (!c.userAgent.isEmpty()) hd.put("User-Agent", c.userAgent);
-        if (!c.referrer.isEmpty()) hd.put("Referer", c.referrer);
+        if (c != null && !c.userAgent.isEmpty()) hd.put("User-Agent", c.userAgent);
+        if (c != null && !c.referrer.isEmpty()) hd.put("Referer", c.referrer);
         m.setDataSource(ctx, Uri.parse(url), hd);
         m.setOnVideoSizeChangedListener(new MediaPlayer.OnVideoSizeChangedListener() {
             @Override public void onVideoSizeChanged(MediaPlayer p, int w, int hh) { if (!dead) l.onVideoSize(w, hh); }
@@ -61,6 +65,13 @@ public final class MediaPlayerEngine implements Engine {
         m.setOnPreparedListener(new MediaPlayer.OnPreparedListener() {
             @Override public void onPrepared(final MediaPlayer p) {
                 if (dead) return;
+                if (startPosMs > 0) {
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        p.seekTo((int) startPosMs, MediaPlayer.SEEK_CLOSEST_SYNC);
+                    } else {
+                        p.seekTo((int) startPosMs);
+                    }
+                }
                 p.start();
                 h.postDelayed(new Runnable() { // audio-only streams never render video
                     @Override public void run() { if (!dead && p.isPlaying() && p.getVideoWidth() == 0) l.onPlaying(); }
@@ -197,11 +208,14 @@ public final class MediaPlayerEngine implements Engine {
         if (!t.equals(lastText)) { lastText = t; l.onCues(t); }
     }
 
-    @Override public long positionMs() { return -1; }
+    @Override public long positionMs() { if (mp != null) { try { return mp.getCurrentPosition(); } catch (Exception ignored) {} } return -1; }
+    @Override public long durationMs() { if (mp != null) { try { return mp.getDuration(); } catch (Exception ignored) {} } return -1; }
     @Override public long windowMs() { return -1; }
     @Override public long behindMs() { return 0; }
-    @Override public void seekBy(long ms) { }
+    @Override public void seekBy(long ms) { if (mp != null) { try { mp.seekTo((int) Math.max(0, mp.getCurrentPosition() + ms)); } catch (Exception ignored) {} } }
+    @Override public void seekTo(long positionMs) { if (mp != null) { try { mp.seekTo((int) positionMs); } catch (Exception ignored) {} } }
     @Override public void goLive() { }
+    @Override public boolean isPlaying() { if (mp != null) { try { return mp.isPlaying(); } catch (Exception ignored) {} } return false; }
 
     @Override public void setEven(boolean on) { even = on; if (mp != null) lev.update(mp.getAudioSessionId(), on); }
 

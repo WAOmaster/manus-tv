@@ -5,15 +5,15 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.view.View;
 
-/** Thin programme progress bar: dim track with a cyan fill. */
+/** Thin programme progress bar: dim track with a SIGNAL fill. */
 public final class NowBar extends View {
     private final Paint track = new Paint(), fill = new Paint();
     private float p;
 
     public NowBar(Context c) {
         super(c);
-        track.setColor(0x33FFFFFF);
-        fill.setColor(Ui.CYAN);
+        track.setColor(Ui.LINE);
+        fill.setColor(Ui.SIGNAL);
     }
 
     public void set(float progress) { p = progress; invalidate(); }

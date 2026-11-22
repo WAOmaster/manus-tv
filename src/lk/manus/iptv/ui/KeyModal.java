@@ -26,11 +26,11 @@ public final class KeyModal extends Modal {
         super(c);
         box = new LinearLayout(c);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setBackground(Ui.rect(0xFF141A2A, 18));
+        box.setBackground(Ui.card(1f, 18));
         box.setPadding(Ui.u(28), Ui.u(22), Ui.u(28), Ui.u(20));
-        title = Ui.tv(c, Ui.TITLE, Ui.TXT, true);
+        title = Ui.tv(c, Ui.TITLE, Ui.PAPER, true);
         box.addView(title);
-        hint = Ui.tv(c, Ui.CAPTION, Ui.SEC, false);
+        hint = Ui.tv(c, Ui.CAPTION, Ui.MUTED, false);
         hint.setSingleLine(false);
         hint.setPadding(0, Ui.u(6), 0, Ui.u(10));
         box.addView(hint);
@@ -40,9 +40,9 @@ public final class KeyModal extends Modal {
         scroll.setVerticalScrollBarEnabled(false);
         scroll.addView(body);
         box.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        big = Ui.tv(c, Ui.TITLE, Ui.CYAN, true);
+        big = Ui.tv(c, Ui.TITLE, Ui.PAPER, true);
         big.setSingleLine(false);
-        log = Ui.tv(c, Ui.CAPTION, Ui.TXT, false);
+        log = Ui.tv(c, Ui.CAPTION, Ui.PAPER, false);
         log.setSingleLine(false);
         log.setPadding(0, Ui.u(10), 0, 0);
         add(box, Ui.u(480));
@@ -56,14 +56,14 @@ public final class KeyModal extends Modal {
         hint.setText("Up / Down to scroll. Back closes.");
         body.removeAllViews();
         for (Object[] k : Keys.HELP) {
-            TextView l = Ui.tv(getContext(), Ui.BODY, Ui.TXT, true);
+            TextView l = Ui.tv(getContext(), Ui.BODY, Ui.PAPER, true);
             int dot = (Integer) k[2];
             if (dot != 0) {
                 SpannableString sp = new SpannableString("● " + k[0]);
                 sp.setSpan(new ForegroundColorSpan(dot), 0, 1, 0);
                 l.setText(sp);
             } else l.setText((String) k[0]);
-            TextView d = Ui.tv(getContext(), Ui.CAPTION, Ui.SEC, false);
+            TextView d = Ui.tv(getContext(), Ui.CAPTION, Ui.MUTED, false);
             d.setSingleLine(false);
             d.setText((String) k[1]);
             d.setPadding(0, Ui.u(1), 0, Ui.u(10));

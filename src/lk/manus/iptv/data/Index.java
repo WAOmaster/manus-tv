@@ -167,7 +167,7 @@ public final class Index {
         return srcId;
     }
 
-    public List<Channel> search(String q, Set<String> favs) { return Search.run(all, folded, q, favs); }
+    public List<Channel> search(String q) { return Search.run(all, folded, q); }
 
     private static void add(Map<String, List<Channel>> m, String k, Channel c) {
         List<Channel> l = m.get(k);
@@ -189,26 +189,35 @@ public final class Index {
     private long lastRefresh;
     private String sigKey = "";
 
-    public void setSignals(Ranker.Signals s) { sig = s; synchronized (cache) { cache.clear(); } }
+    public void setSignals(Ranker.Signals s) { sig = s; clearAll(); }
+
+    /** For You's order, fixed for the app session: {raw list, folded + sorted list}. Cleared only by a setting change or {@link #rebuildNow}. */
+    private Object[] foryouFrozen;
+
+    private void clearAll() { synchronized (cache) { cache.clear(); foryouFrozen = null; } }
 
     /** Health, favourites or plays changed: the next {@link #refresh} may rebuild. Cheap; call as often as you like. */
     public void markDirty() { dirty = true; }
 
     /** Drops every ranked list now (health was reset in bulk). */
-    public void rebuildNow() { synchronized (cache) { cache.clear(); } }
+    public void rebuildNow() { clearAll(); }
 
     /**
      * Drops the ranked lists when the pinned countries / "show unavailable" setting changed (at once), or when something
-     * was marked dirty and 5 s passed. Call it when a section is OPENED, never while the user is looking at one.
+     * was marked dirty and 5 s passed (only health can still move a browse row; For You keeps its order). Call it when a
+     * section is OPENED, never while the user is looking at one.
      */
-    public void refresh(Store s) {
+    public void refresh(Store s) { refresh(s, System.currentTimeMillis()); }
+
+    public void refresh(Store s, long now) {
         String k = s.fyCountries() + "|" + s.showUnavail() + "|" + s.crossLang();
-        long now = System.currentTimeMillis();
-        if (k.equals(sigKey) && !(dirty && now - lastRefresh >= 5000)) return;
+        boolean settings = !k.equals(sigKey);
+        if (!settings && !(dirty && now - lastRefresh >= 5000)) return;
         sigKey = k;
         dirty = false;
         lastRefresh = now;
-        synchronized (cache) { cache.clear(); }
+        if (settings) clearAll();
+        else synchronized (cache) { cache.clear(); }
     }
 
     /**
@@ -226,14 +235,18 @@ public final class Index {
             if (e != null && e[0] == r) return (List<Channel>) e[1];
         }
         final Ranker.Signals g = sg;
+        boolean fy = id.equals("foryou");
+        List<Channel> l = null;
+        synchronized (cache) { if (fy && foryouFrozen != null && foryouFrozen[0] == r) l = (List<Channel>) foryouFrozen[1]; }
         long t0 = System.nanoTime();
-        List<Channel> l = Dedup.fold(r, g, s.versionMap(), s.crossLang());
-        long t1 = System.nanoTime();
+        if (l == null) {
+            l = Dedup.fold(r, g, s.versionMap(), s.crossLang());
+            if (fy) Ranker.sortForYou(l, sg); else Ranker.sort(l, sg);
+            if (fy) synchronized (cache) { foryouFrozen = new Object[]{r, l}; }
+        }
         int groups = l.size();
-        Ranker.sort(l, sg);
-        long t2 = System.nanoTime();
         l = Ranker.visible(l, sg, s.showUnavail());
-        if (r.size() >= 200) log("rank " + id + ": " + r.size() + " streams -> " + groups + " entries -> " + l.size() + " rows, fold " + (t1 - t0) / 1000000 + " ms, sort " + (t2 - t1) / 1000000 + " ms");
+        if (r.size() >= 200) log("rank " + id + ": " + r.size() + " streams -> " + groups + " entries -> " + l.size() + " rows, " + (System.nanoTime() - t0) / 1000000 + " ms");
         synchronized (cache) { cache.put(id, new Object[]{r, l}); }
         return l;
     }

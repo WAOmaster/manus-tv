@@ -9,7 +9,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
-/** Channel ordering: health, favourite, on-device plays, then a static score, then name. Keys are precomputed; the comparator allocates nothing. */
+/**
+ * Channel ordering. Browse lists (country, category, source, all, search): dead last, then a static score, then name. Nothing the viewer does
+ * (starring, watching, a probe finding a stream alive) moves a row. {@link #sortForYou}: health, favourite, on-device plays, last played first. Keys are precomputed; the comparator allocates nothing.
+ */
 public final class Ranker {
     private Ranker() {}
 
@@ -62,8 +65,13 @@ public final class Ranker {
         }
     }
 
-    /** Stable in-place sort. */
-    public static void sort(List<Channel> list, Signals s) {
+    /** Stable in-place sort for browse lists: dead last, static score, name. Ignores favourites, watch history and alive-vs-unknown. */
+    public static void sort(List<Channel> list, Signals s) { sort(list, s, false); }
+
+    /** Stable in-place sort for the personal For You list: as {@link #sort} but favourites and watch history lead. */
+    public static void sortForYou(List<Channel> list, Signals s) { sort(list, s, true); }
+
+    private static void sort(List<Channel> list, Signals s, boolean personal) {
         int n = list.size();
         Map<String, Integer> pinned = new HashMap<>();
         int i = 0;
@@ -73,9 +81,10 @@ public final class Ranker {
             Channel c = list.get(j);
             E e = new E();
             long h = Math.max(-1, Math.min(2, s.health(c.url))) + 1;              // 0..3
-            long fav = s.isFavourite(c.url) ? 1 : 0;
-            long pc = Math.min(Math.max(s.playCount(c.url), 0), 65535);
-            long last = Math.min(Math.max(s.lastPlayedMs(c.url), 0) / 60000L, Integer.MAX_VALUE);
+            if (!personal) h = h == 0 ? 0 : 1;                                    // only DEAD sorts apart: alive/unknown flips must not move rows
+            long fav = personal && s.isFavourite(c.url) ? 1 : 0;
+            long pc = personal ? Math.min(Math.max(s.playCount(c.url), 0), 65535) : 0;
+            long last = personal ? Math.min(Math.max(s.lastPlayedMs(c.url), 0) / 60000L, Integer.MAX_VALUE) : 0;
             e.k1 = ((h * 2 + fav) << 47) | (pc << 31) | last;
             e.score = score(c, pinned, pinned.size(), s.popularity(c.url));
             e.name = c.name.toLowerCase(Locale.ROOT);

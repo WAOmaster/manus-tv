@@ -12,8 +12,7 @@ import android.graphics.drawable.Drawable;
 /** Placeholder logo: rounded coloured square with the channel's initials. */
 public final class LetterTile extends Drawable {
     private static final int[] COLOURS = {
-            0xFF3B2F80, 0xFF0E6E6E, 0xFF8A2D5C, 0xFF1F5FAF, 0xFF7A4B12,
-            0xFF2E6B2E, 0xFF6A1B9A, 0xFF00695C, 0xFFAD1457, 0xFF283593
+            0xFF6E2B2B, 0xFF6E5220, 0xFF48532A, 0xFF2C524E, 0xFF37465A, 0xFF54383F // brick, ochre, olive, pine, slate, umber (UX-SPEC 5a)
     };
 
     // Shared paints + cached initials: a list binds dozens of these per scroll (UI thread only)
@@ -21,7 +20,7 @@ public final class LetterTile extends Drawable {
     private static final java.util.HashMap<String, String> INITIALS = new java.util.HashMap<>();
     private static final RectF RECT = new RectF();
     static {
-        TEXT.setColor(0xFFFFFFFF);
+        TEXT.setColor(Ui.PAPER);
         TEXT.setTypeface(Typeface.DEFAULT_BOLD);
         TEXT.setTextAlign(Paint.Align.CENTER);
     }

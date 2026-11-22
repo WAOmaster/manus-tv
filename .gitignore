@@ -14,7 +14,7 @@ build-test/
 PRD.md
 TASKS.md
 design/
-spike/
+/spike/
 *.aab
 *.jks
 manus-tv-universal.apk

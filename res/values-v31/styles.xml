@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.Manus.Splash" parent="Theme.Manus">
+        <item name="android:windowSplashScreenBackground">#FF050505</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+    </style>
+</resources>

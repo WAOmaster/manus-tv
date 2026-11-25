@@ -41,6 +41,10 @@ VIDEO_FILES = [
 LIVE_FILE = "F:/Dev/tvdemo-sdk/web2/www/live_test/sintel/seg_Espanol_0.ts"
 if not os.path.exists(LIVE_FILE):
     LIVE_FILE = "F:/Dev/tvdemo-sdk/tmp/A.mp4"
+# CI (tools/ci/tv-check.sh): MOCK_MEDIA = one film file used for every film/episode, MOCK_LIVE = the live .ts (default: MOCK_MEDIA)
+if os.environ.get("MOCK_MEDIA"):
+    VIDEO_FILES = [os.environ["MOCK_MEDIA"]]
+    LIVE_FILE = os.environ.get("MOCK_LIVE", os.environ["MOCK_MEDIA"])
 
 MIME_TYPES = {
     "mp4": "video/mp4",

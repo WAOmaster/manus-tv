@@ -15,7 +15,7 @@ if [ -z "${UPLOAD_KS_PASS:-}" ]; then
 fi
 export UPLOAD_KS_PASS
 mkdir -p build/m/manifest build/m/dex
-"$BT/aapt2.exe" link --proto-format -o build/proto.apk -I "$JAR" --manifest build/AndroidManifest.xml -A libs/assets build/res.zip build/res-mlkit.zip
+"$BT/aapt2$EXE" link --proto-format -o build/proto.apk -I "$JAR" --manifest build/AndroidManifest.xml -A libs/assets build/res.zip build/res-mlkit.zip
 (cd build/m && unzip -qo ../proto.apk && mv AndroidManifest.xml manifest/ && cp ../dex/classes*.dex dex/ && cp -r ../../libs/native/lib .)
 echo '{"optimizations":{"uncompressNativeLibraries":{"enabled":true,"alignment":"PAGE_ALIGNMENT_16K"}}}' > build/config.json
 (cd build/m && jar cfM ../base.zip .)
@@ -28,5 +28,5 @@ rm -f build/u.apks; printf %s "$UPLOAD_KS_PASS" > build/ks.pw # build/ is delete
 bt build-apks --bundle="$(cygpath -w manus-tv.aab)" --mode=universal --output="$(cygpath -w build/u.apks)" --ks="$(cygpath -w "$UPLOAD_KS")" --ks-pass=file:"$(cygpath -w build/ks.pw)" --ks-key-alias="$UPLOAD_ALIAS"
 (cd build && unzip -qo u.apks universal.apk && cp universal.apk ../manus-tv-universal.apk)
 bt dump manifest --bundle="$(cygpath -w manus-tv.aab)" | grep -E "versionCode|versionName|targetSdk|minSdk"
-"$BT/aapt2.exe" dump badging manus-tv-universal.apk | grep -E "^package|sdkVersion|targetSdk|native-code|leanback|banner"
+"$BT/aapt2$EXE" dump badging manus-tv-universal.apk | grep -E "^package|sdkVersion|targetSdk|native-code|leanback|banner"
 ls -l manus-tv.aab

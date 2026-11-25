@@ -23,7 +23,10 @@ public final class Search {
     }
 
     /** {@code folded[i]} must be fold(all.get(i).name). Ties keep the order of {@code all} (name order). */
-    public static List<Channel> run(List<Channel> all, String[] folded, String query) {
+    public static List<Channel> run(List<Channel> all, String[] folded, String query) { return run(all, folded, query, MAX); }
+
+    /** As run(), with the result cap given (M3: filters narrow the full match list, then the screen caps it). */
+    public static List<Channel> run(List<Channel> all, String[] folded, String query, int max) {
         String q = fold(query).trim().replaceAll("\\s+", " ");
         List<Channel> out = new ArrayList<>();
         if (q.isEmpty()) return out;
@@ -48,7 +51,7 @@ public final class Search {
             keys[n++] = ((long) score << 32) | i;
         }
         Arrays.sort(keys, 0, n);
-        for (int i = 0; i < n && i < MAX; i++) out.add(all.get((int) (keys[i] & 0xFFFFFFFFL)));
+        for (int i = 0; i < n && i < max; i++) out.add(all.get((int) (keys[i] & 0xFFFFFFFFL)));
         return out;
     }
 }

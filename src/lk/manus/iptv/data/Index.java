@@ -168,6 +168,7 @@ public final class Index {
     }
 
     public List<Channel> search(String q) { return Search.run(all, folded, q); }
+    public List<Channel> search(String q, int max) { return Search.run(all, folded, q, max); }
 
     private static void add(Map<String, List<Channel>> m, String k, Channel c) {
         List<Channel> l = m.get(k);

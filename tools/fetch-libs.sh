@@ -7,7 +7,10 @@ mkdir -p libs/dl libs/jars libs/native/lib/armeabi-v7a libs/native/lib/arm64-v8a
 rm -f libs/proguard-media3.txt
 while read -r sha url; do
   f=libs/dl/$(basename "$url")
-  [ -f "$f" ] || curl -sfL --retry 4 --retry-delay 3 --retry-all-errors -o "$f" "$url" || { rm -f "$f"; echo "download failed: $url"; exit 1; }
+  # Maven Central sometimes refuses CI machines: Google's mirror of it is the fallback (the pinned sha256 below still decides)
+  [ -f "$f" ] || curl -sfL --retry 4 --retry-delay 3 --retry-all-errors -o "$f" "$url" \
+    || { [ "${url#https://repo1.maven.org/}" != "$url" ] && curl -sfL --retry 3 --retry-all-errors -o "$f" "https://maven-central.storage-download.googleapis.com/${url#https://repo1.maven.org/}"; } \
+    || { rm -f "$f"; echo "download failed: $url"; exit 1; }
   echo "$sha  $f" | sha256sum -c --quiet - || { echo "BAD SHA $f"; exit 1; }
   case $f in
     *.aar) n=$(basename "$f" .aar); unzip -qo -j "$f" classes.jar -d libs/jars && mv libs/jars/classes.jar "libs/jars/$n.jar"

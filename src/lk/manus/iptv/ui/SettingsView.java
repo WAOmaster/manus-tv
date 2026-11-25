@@ -932,9 +932,11 @@ public final class SettingsView extends FrameLayout {
         LinearLayout left = new LinearLayout(getContext());
         left.setOrientation(LinearLayout.VERTICAL);
         if (!Config.PLAY) {
-            left.addView(label("Suggested"));
-            if (host.sources().get(Sources.DEFAULT_ID) == null) left.addView(suggest("iptv-org free public list (community-maintained)", Sources.DEFAULT_URL, Sources.FREE_NAME), new LinearLayout.LayoutParams(-1, Ui.u(60)));
-            left.addView(suggest("Free-TV (official free broadcasters, mostly Europe)", Sources.FREE_TV_URL, "Free-TV"), new LinearLayout.LayoutParams(-1, Ui.u(60)));
+            boolean haveIptvOrg = host.sources().get(Sources.DEFAULT_ID) != null, haveFreeTv = false; // each offered once: not again after it was added
+            for (Sources.Source x : host.sources().list()) if (Sources.FREE_TV_URL.equals(x.url)) haveFreeTv = true;
+            if (!haveIptvOrg || !haveFreeTv) left.addView(label("Suggested"));
+            if (!haveIptvOrg) left.addView(suggest("iptv-org free public list (community-maintained)", Sources.DEFAULT_URL, Sources.FREE_NAME), new LinearLayout.LayoutParams(-1, Ui.u(60)));
+            if (!haveFreeTv) left.addView(suggest("Free-TV (official free broadcasters, mostly Europe)", Sources.FREE_TV_URL, "Free-TV"), new LinearLayout.LayoutParams(-1, Ui.u(60)));
         }
         left.addView(label("Playlist link"));
         urlEt = edit("https://example.com/playlist.m3u", InputType.TYPE_TEXT_VARIATION_URI);

@@ -489,6 +489,9 @@ final class FilmPlayer {
         if (barBox == null) return;
         updateBarUi();
         barBox.setVisibility(View.VISIBLE);
+        barBox.post(new Runnable() { @Override public void run() { // subtitles move above the bar instead of being covered by it (seen on the emulator)
+            if (barBox.getVisibility() == View.VISIBLE) ps.ui.liftSubs(barBox.getHeight() + Ui.u(12));
+        } });
         ps.h.removeCallbacks(hideBarR);
         if (autoHideMs > 0) {
             ps.h.postDelayed(hideBarR, autoHideMs);
@@ -498,6 +501,7 @@ final class FilmPlayer {
     void hideBar() {
         ps.h.removeCallbacks(hideBarR);
         if (barBox != null) barBox.setVisibility(View.GONE);
+        ps.ui.liftSubs(0);
     }
 
     private void updateBarUi() {

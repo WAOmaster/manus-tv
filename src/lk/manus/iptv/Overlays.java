@@ -431,6 +431,14 @@ final class Overlays {
     }
 
     /** Ends a status pill only; a message pill keeps its own timer. */
+    /** Moves the subtitle line (and the bottom stack it lives in) up by px, e.g. above the film's playback bar; 0 = back to its place. */
+    void liftSubs(int px) {
+        float y = -Math.max(0, px);
+        if (bottomStack.getTranslationY() == y) return;
+        bottomStack.animate().cancel();
+        if (Ui.anim()) bottomStack.animate().translationY(y).setDuration(160).setInterpolator(Ui.DEC).start(); else bottomStack.setTranslationY(y);
+    }
+
     void hidePill() { if (pillKind == 1) { toast.setVisibility(View.GONE); pillKind = 0; } }
 
     void clearToast() { if (ps.remind.offering() || ps.sleep.warning()) return; ps.h.removeCallbacks(hideToast); if (pillKind == 2) { toast.setVisibility(View.GONE); pillKind = 0; } }

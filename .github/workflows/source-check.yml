@@ -4,7 +4,7 @@ name: source-check
 on:
   push:
     branches: ['claude/**']
-    paths: ['tools/ci/source-*', '.github/workflows/source-check.yml']
+    paths: ['tools/ci/source-*', 'tools/fetch-libs.sh', '.github/workflows/source-check.yml']
   workflow_dispatch:
 permissions:
   contents: read

@@ -7,7 +7,7 @@ mkdir -p libs/dl libs/jars libs/native/lib/armeabi-v7a libs/native/lib/arm64-v8a
 rm -f libs/proguard-media3.txt
 while read -r sha url; do
   f=libs/dl/$(basename "$url")
-  [ -f "$f" ] || curl -sfL -o "$f" "$url"
+  [ -f "$f" ] || curl -sfL --retry 4 --retry-delay 3 --retry-all-errors -o "$f" "$url" || { rm -f "$f"; echo "download failed: $url"; exit 1; }
   echo "$sha  $f" | sha256sum -c --quiet - || { echo "BAD SHA $f"; exit 1; }
   case $f in
     *.aar) n=$(basename "$f" .aar); unzip -qo -j "$f" classes.jar -d libs/jars && mv libs/jars/classes.jar "libs/jars/$n.jar"
@@ -65,5 +65,6 @@ b6194f7b42034309cf8299784b2d5d70a82a2e9287fbe1650dea4d1f3ad1fe55 https://dl.goog
 LIST
 # bundletool (only for tools/build-aab.sh; needs Java 17)
 BT_JAR=libs/dl/bundletool-all-1.18.1.jar
-[ -f "$BT_JAR" ] || curl -sfL -o "$BT_JAR" https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar
-echo "675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c  $BT_JAR" | sha256sum -c --quiet - || { echo "BAD SHA $BT_JAR"; exit 1; }
+# bundletool is only needed for the Play bundle (bash build.sh aab): a failed download warns instead of stopping an APK build
+[ -f "$BT_JAR" ] || curl -sfL --retry 4 --retry-delay 3 --retry-all-errors -o "$BT_JAR" https://github.com/google/bundletool/releases/download/1.18.1/bundletool-all-1.18.1.jar || { rm -f "$BT_JAR"; echo "WARNING: bundletool download failed (needed only for the .aab)"; }
+[ ! -f "$BT_JAR" ] || echo "675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c  $BT_JAR" | sha256sum -c --quiet - || { echo "BAD SHA $BT_JAR"; exit 1; }

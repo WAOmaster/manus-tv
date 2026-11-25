@@ -24,6 +24,9 @@ public final class Channel {
     public int archiveDays;        // T95: Xtream catch-up window in days, 0 = none
     public long xtItem;            // T95: item id of an Xtream live channel, 0 = not an Xtream channel
 
+    /** One code per country everywhere: "gb" (ISO, used by some playlists' tvg-ids) is the app's "uk" (iptv-org's), so the United Kingdom is listed once. */
+    public static String cc(String c) { return c != null && c.equalsIgnoreCase("gb") ? "uk" : c; }
+
     public Channel(String id, String name, String quality, String logo, String[] groups,
                    String country, String url, String userAgent, String referrer) {
         this(id, name, quality, logo, groups, country, url, userAgent, referrer, "", groups);
@@ -38,7 +41,7 @@ public final class Channel {
         this.quality = quality;
         this.logo = logo;
         this.groups = groups;
-        this.country = country;
+        this.country = cc(country);
         this.url = url;
         this.userAgent = userAgent;
         this.referrer = referrer;

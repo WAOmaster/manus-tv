@@ -76,6 +76,15 @@ public class SearchFilterTest {
         // labels
         eq("type cycle", SearchFilter.TYPE_ALL, SearchFilter.nextType(SearchFilter.TYPE_SERIES));
         eq("quality label", "Full HD", SearchFilter.qualityLabel(SearchFilter.Q_FHD));
+        // one United Kingdom: "gb" from a tvg-id (BBCOne.gb) or a source is stored as the app's "uk"
+        eq("gb -> uk", "uk", ch("BBC One", "", "gb").country);
+        eq("GB -> uk", "uk", ch("BBC Two", "", "GB").country);
+        eq("uk stays", "uk", ch("ITV", "", "uk").country);
+        eq("others untouched", "lk", ch("Hiru", "", "lk").country);
+        try {
+            java.util.List<Channel> p = lk.manus.iptv.data.M3uParser.parse(new java.io.StringReader("#EXTM3U\n#EXTINF:-1 tvg-id=\"bbcone.gb\",BBC One\nhttp://x/1\n#EXTINF:-1 tvg-id=\"itv.uk\",ITV\nhttp://x/2\n"));
+            eq("parser: .gb and .uk ids are one country", "uk uk", p.get(0).country + " " + p.get(1).country);
+        } catch (Exception e) { eq("parser threw", "", e.toString()); }
         System.out.println("SearchFilterTest: " + checks + " checks, " + failures + " failures");
         if (failures > 0) System.exit(1);
     }

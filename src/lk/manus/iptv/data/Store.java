@@ -254,14 +254,21 @@ public final class Store {
     }
 
     /** For You picker; null-free, defaults to the original curated behaviour. */
-    public Set<String> fyCountries() { return set("fy_countries", Curated.DEFAULT_COUNTRIES); }
+    public Set<String> fyCountries() { return ccSet(set("fy_countries", Curated.DEFAULT_COUNTRIES), false); }
     public Set<String> fyCats() { return set("fy_cats", Curated.DEFAULT_CATS); }
     public void setFyCountries(Set<String> s) { p.edit().putString("fy_countries", String.join("\n", s)).commit(); }
     public void setFyCats(Set<String> s) { p.edit().putString("fy_cats", String.join("\n", s)).commit(); }
     public void resetFy() { p.edit().remove("fy_countries").remove("fy_cats").commit(); }
 
     /** Groups hidden from the sidebar's level-2 lists: "cc:jp", "cat:News". */
-    public Set<String> hidden() { return set("hidden", new ArrayList<String>()); }
+    public Set<String> hidden() { return ccSet(set("hidden", new ArrayList<String>()), true); }
+
+    /** Choices saved before country codes were unified: "gb" / "cc:gb" read as "uk" / "cc:uk" (order kept, duplicates dropped). */
+    private static Set<String> ccSet(Set<String> in, boolean prefixed) {
+        Set<String> out = new LinkedHashSet<>();
+        for (String v : in) out.add(prefixed ? (v.equalsIgnoreCase("cc:gb") ? "cc:uk" : v) : Channel.cc(v));
+        return out;
+    }
     public void hide(String id) { Set<String> s = hidden(); s.add(id); p.edit().putString("hidden", String.join("\n", s)).commit(); }
     public void unhide(String id) { Set<String> s = hidden(); s.remove(id); p.edit().putString("hidden", String.join("\n", s)).commit(); }
 

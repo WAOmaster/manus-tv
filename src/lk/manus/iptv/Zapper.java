@@ -129,6 +129,7 @@ final class Zapper {
         if (ps.idx == null) { guideWhenReady = true; return; }
         prepGuide();
         ps.ui.hidePill(); // a status pill from the picture underneath must not ride over the guide
+        if (ps.gaveUp) ps.ui.clearToast(); // nor the "isn't playing" message (it has no timeout): it stayed over every guide page (seen on the emulator)
         ps.guide.open();
         ps.ui.wmUpdate();
         if (Config.DEBUG && ps.bgSkipSec > 0) { ps.h.removeCallbacks(ps.fov.bgSkipR); ps.h.postDelayed(ps.fov.bgSkipR, ps.bgSkipSec * 1000L); ps.bgSkipSec = 0; }
@@ -182,6 +183,7 @@ final class Zapper {
         }
         ps.previewCh = null;
         if (ps.list == null) return;
+        if (ps.gaveUp) ps.ui.showToast(Failover.NOT_PLAYING, 0); // back on the channel that failed: say so again (a new choice resets gaveUp)
         ps.ui.wmUpdate();
         ps.subsCtl.showCue();
         if (ps.eng != null && ps.eng.smart()) ps.tsh.tsUpdate();

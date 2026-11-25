@@ -18,9 +18,10 @@ open foryou 4; shot guide-for-you
 open countries 3; k 23; sleep 1; shot countries-menu
 open cats 3; k 23; sleep 1; shot categories-menu
 open search 3; k 20 20 22 23; sleep 1; shot search-country-picker
-k 4; sleep 1
-k 4; sleep 1 # leave the guide: full screen
-for i in $(seq 1 10); do k 19; sleep 10; shot "flip-$i"; done
+k 4; sleep 1 # close the picker
+# tune into the United Kingdom list (Countries menu, 2nd row) and flip through it full screen; Up = next channel
+open countries 3; k 23; sleep 1; k 20; sleep 1; k 22; sleep 1; k 23; sleep 12; shot uk-first-channel
+for i in $(seq 1 10); do k 19; sleep 12; shot "flip-$i"; done
 adb logcat -d -v time -s IPTV:* AndroidRuntime:* > "$SHOTS/logcat.txt"
 grep -E 'index built|start #|playing after|failed|gave up|alternate|skip' "$SHOTS/logcat.txt" | sed 's/^.*IPTV *([ 0-9]*): //' > "$SHOTS/playback.txt"
 echo "starts: $(grep -c 'start #' "$SHOTS/playback.txt")  playing: $(grep -c 'playing after' "$SHOTS/playback.txt")" | tee -a "$SHOTS/playback.txt"

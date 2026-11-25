@@ -28,8 +28,8 @@ jobs:
       - name: Test media, playlist and mock servers
         run: |
           sudo apt-get install -y -qq ffmpeg > /dev/null
-          bash tools/ci/make-media.sh "$RUNNER_TEMP/media"
           mkdir -p "$RUNNER_TEMP/www" "$RUNNER_TEMP/posters"
+          bash tools/ci/make-media.sh "$RUNNER_TEMP/media" "$RUNNER_TEMP/www"
           python3 tools/ci/playlist.py "$RUNNER_TEMP/www/playlist.m3u"
           nohup python3 -m http.server 8000 -d "$RUNNER_TEMP/www" > "$RUNNER_TEMP/www.log" 2>&1 &
           MOCK_MEDIA="$RUNNER_TEMP/media/film.mp4" MOCK_LIVE="$RUNNER_TEMP/media/live.ts" POSTERS_DIR="$RUNNER_TEMP/posters" \

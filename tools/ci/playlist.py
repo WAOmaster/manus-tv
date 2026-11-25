@@ -29,4 +29,8 @@ with open(out, "w", encoding="utf-8") as f:
         label = name + (f" ({q})" if q else "")
         f.write(f'#EXTINF:-1 tvg-id="{tid}" group-title="{group}",{label}\n')
         f.write(f"http://{host}/live/demo/demo123/{300 + i}.ts\n")
-print(f"{out}: {len(CH)} channels")
+    # the live subtitle check: HLS + WebVTT served by the playlist server (tools/ci/make-media.sh <out> <www>)
+    www = host.split(":")[0] + ":8000"
+    f.write('#EXTINF:-1 tvg-id="subtitletest.lk" group-title="Entertainment",Subtitle Test HD\n')
+    f.write(f"http://{www}/hls/master.m3u8\n")
+print(f"{out}: {len(CH) + 1} channels")

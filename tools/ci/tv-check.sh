@@ -20,14 +20,17 @@ printf '%s' '<?xml version="1.0" encoding="utf-8" standalone="yes" ?><map><boole
 adb push /tmp/iptv.xml /data/local/tmp/iptv.xml >/dev/null
 adb shell "run-as $PKG mkdir -p shared_prefs && run-as $PKG cp /data/local/tmp/iptv.xml shared_prefs/iptv.xml && run-as $PKG ls shared_prefs" || echo "WARNING: could not mark setup done"
 adb logcat -c
-adb shell am start -n "$ACT" --es src "http://10.0.2.2:8000/playlist.m3u" --ez subsdef true --es xtream "'http://10.0.2.2:8081|demo|demo123'" >/dev/null
-sleep 0.8; shot M1c-boot-a
-sleep 1.2; shot M1c-boot-b
-sleep 2; shot M1c-boot-c
-sleep 40; shot live-after-start # channels + the mock film library sync
+# starts on "Subtitle Test HD" (HLS + WebVTT) with its first subtitle track on: the M1 "never cut" check on the live path
+adb shell am start -n "$ACT" --es src "http://10.0.2.2:8000/playlist.m3u" --ez subsdef true --ei sub 0 --es tune "'Subtitle Test'" --es xtream "'http://10.0.2.2:8081|demo|demo123'" >/dev/null
+sleep 0.3; shot M1c-boot-a
+sleep 0.5; shot M1c-boot-b
+sleep 1; shot M1c-boot-c
+sleep 8; shot M1a-live-subtitle-two-speakers
+sleep 25; shot M1a-live-subtitle-still-two-speakers
+sleep 32; shot M1a-live-subtitle-long-single-line
 
-echo "== M2: the All list, row-number jump, sort chip, keypad letters, filter"
-open all 4; shot M2-all-number-sort
+echo "== M2: the For You list, row-number jump, sort chip, keypad letters, filter"
+open foryou 4; shot M2-all-number-sort
 k $D1; adb shell input keyevent $D2; sleep 0.4; shot M2-typed-12-jump
 sleep 2; k $D1; sleep 1.6; k $UP; shot M2-chips-focused
 k $OK; sleep 0.5; shot M2-sorted-AZ
@@ -44,7 +47,7 @@ open cats 3; k $OK; sleep 1; shot M2-categories-menu
 k $D6; shot M2-categories-key6
 
 echo "== M3: search filters without typing"
-open search 3; k $BACK; sleep 0.5; shot M3-search-page
+open search 3; shot M3-search-page # focus starts in the search box
 k $DOWN $DOWN; shot M3-chips-focused
 k $RIGHT $OK; sleep 1; shot M3-country-picker
 k $DOWN $OK; sleep 2; shot M3-country-chosen
@@ -61,7 +64,7 @@ k $BACK; sleep 2; shot M1b-back1-details
 k $BACK; sleep 2; shot M1b-back2-library-not-channels
 
 echo "== M1c: tuning a live channel"
-open all 4; k $DOWN $OK; sleep 0.3; shot M1c-tuning-banner
+open foryou 4; k $DOWN $OK; sleep 0.3; shot M1c-tuning-banner
 
 adb logcat -d -v time -s IPTV:* AndroidRuntime:* ActivityManager:W > "$SHOTS/logcat.txt" 2>/dev/null
 adb shell dumpsys activity activities | grep -E 'mResumedActivity|mFocusedApp' > "$SHOTS/activity.txt" 2>/dev/null

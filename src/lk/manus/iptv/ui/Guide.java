@@ -2436,11 +2436,15 @@ public final class Guide extends FrameLayout {
             if (navHint) e = "Press OK or ›\nto open";
             else if (shownId.equals("fav")) e = "★\n\nLong-press OK on any channel to add it here";
             else if (shownId.equals("recent")) e = "Channels you watch will show up here";
-            else if (isSearch) e = sfilter.active() ? "No channels match these filters\n\nChange a filter, or Clear filters" : searchEt.getText().length() == 0 ? "Press OK to open the keyboard\nor use the mic on your remote\n\nor pick a filter below the box, no typing needed" : "No channels match";
+            else if (isSearch) e = sfilter.active() ? "No channels match these filters\n\nChange a filter, or Clear filters" : searchEt.getText().length() == 0 ? "Press OK to open the keyboard\nor use the mic on your remote\n\nor pick a filter above, no typing needed" : "No channels match";
             else e = host.index().all.isEmpty() ? "No channels yet \u2014 add a playlist in Settings \u2192 Sources" : "No channels";
         }
         empty.setText(e);
         empty.setVisibility(items.isEmpty() ? VISIBLE : GONE);
+        empty.post(new Runnable() { @Override public void run() { // centred in the space under the headers (search box, filter chips, Sort / Filter), never over them
+            int t = list.getTop();
+            if (empty.getPaddingTop() != t) empty.setPadding(Ui.u(40), t, Ui.u(40), 0);
+        } });
         listSel = Math.max(0, Math.min(pos, items.size() - 1));
         listAd.notifyDataSetChanged();
         list.setSelectionFromTop(listSel, nextTop != null ? nextTop : Ui.u(130));

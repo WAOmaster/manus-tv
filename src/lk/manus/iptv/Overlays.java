@@ -73,6 +73,7 @@ final class Overlays {
         @Override public void run() {
             if (ps.playing || ps.fov.autoSkip() || ps.previewCh != null || ps.guide.isOpen() || ps.userPaused || ps.failUp) return;
             ps.connBox.setVisibility(View.VISIBLE);
+            shutter(true); // slow start: the previous channel's frozen frame must not sit under this channel's name
             ringTick.run();
         }
     };
@@ -129,6 +130,10 @@ final class Overlays {
             @Override public void onSurfaceTextureUpdated(SurfaceTexture st) { }
         });
         root.addView(ps.tex, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        ps.shutter = new View(ps.act); // above the video, below every overlay (added after both video views, before the rest)
+        ps.shutter.setBackgroundColor(Ui.INK);
+        ps.shutter.setVisibility(View.GONE);
+        root.addView(ps.shutter, new FrameLayout.LayoutParams(-1, -1));
         root.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
             @Override public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) { ps.host.fitTex(); }
         });
@@ -438,6 +443,9 @@ final class Overlays {
         bottomStack.animate().cancel();
         if (Ui.anim()) bottomStack.animate().translationY(y).setDuration(160).setInterpolator(Ui.DEC).start(); else bottomStack.setTranslationY(y);
     }
+
+    /** Black cover over the video: on while a channel failed or is slow to start, off as soon as a picture plays. */
+    void shutter(boolean on) { if (ps.shutter != null) ps.shutter.setVisibility(on ? View.VISIBLE : View.GONE); }
 
     void hidePill() { if (pillKind == 1) { toast.setVisibility(View.GONE); pillKind = 0; } }
 

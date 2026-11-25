@@ -48,6 +48,7 @@ final class PlayState {
     Modal modal;
     TextView bSpeed;
     TextView message;
+    View shutter; // black cover over the video views: a failed or slow channel never shows the previous channel's frozen last frame
     View boot; // T105b: cold-start logo screen, null once hidden
     lk.manus.iptv.ui.LoadingLine bootLine; // its status line: names each start-up step (null once hidden)
     View banner;

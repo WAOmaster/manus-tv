@@ -449,6 +449,7 @@ final class FilmPlayer {
 
     private void onPlaying() {
         ps.playing = true;
+        ps.ui.shutter(false); // a failed live channel's cover never stays over a film
         clearOpening();
         ps.guide.hideNow();
         filmTitleTv.setText(currentFilm.title);

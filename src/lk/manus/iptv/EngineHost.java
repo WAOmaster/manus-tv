@@ -262,6 +262,7 @@ final class EngineHost implements SurfaceHolder.Callback {
             ps.h.postDelayed(new Runnable() { @Override public void run() { if (g == ps.gen) onBufferEnd(); } }, 13000);
         }
         Log.i(TAG, "playing after " + (SystemClock.elapsedRealtime() - ps.t0) + " ms");
+        ps.ui.shutter(false);
         if (ps.spike > 0) { spikeRecord("ok", ""); return; }
         if (ps.previewCh == null) {
             ps.prefs.edit().putString("last", ps.list.get(ps.index).url).apply();

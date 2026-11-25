@@ -4,7 +4,7 @@ name: tv-check
 on:
   push:
     branches: ['claude/**']
-    paths: ['src/**', 'res/**', 'AndroidManifest.xml', 'build.sh', 'tools/**', 'test/**', '.github/workflows/tv-check.yml']
+    paths: ['src/**', 'res/**', 'AndroidManifest.xml', 'build.sh', 'tools/**', '!tools/ci/source-*', 'test/**', '.github/workflows/tv-check.yml']
   workflow_dispatch:
 permissions:
   contents: read

@@ -167,6 +167,8 @@ public final class Guide extends FrameLayout {
     private final TextureView cTex;
     private final MiniPreview mini;
     private int miniDrop0;
+    private final lk.manus.iptv.player.MiniPolicy miniPolicy = new lk.manus.iptv.player.MiniPolicy(); // one odd channel skips that channel, not the TV
+    private String miniUrl = "";
     private int avc = -1;                  // H.264 hardware decoder instances (checked once)
     private final TextView cName, cInfo, cSpeed, cStatus, cNow, cTimes, cNext;
     private final NowBar cBar;
@@ -214,8 +216,9 @@ public final class Guide extends FrameLayout {
     private final Runnable liveR = new Runnable() {
         @Override public void run() {
             Channel c = selected();
-            if (c == null || c.url.equals(liveUrl) || !miniOn()) return; // the playing channel is already on screen
+            if (c == null || c.url.equals(liveUrl) || !miniOn() || miniPolicy.skip(c.url)) return; // the playing channel is already on screen; a channel that failed here shows its logo
             miniDrop0 = host.mainDropped();
+            miniUrl = c.url;
             mini.start(c, c.url, cTex);
             h.removeCallbacks(miniWatchR);
             h.postDelayed(miniWatchR, 5000);
@@ -640,7 +643,8 @@ public final class Guide extends FrameLayout {
             @Override public void onVideoSize(int w, int hh) { fitMini(w, hh); }
             @Override public void onFail(String why, boolean decoderProblem) {
                 stopMini();
-                if (decoderProblem) blockMini(why);
+                if (miniPolicy.onFail(why, miniUrl) == lk.manus.iptv.player.MiniPolicy.BLOCK_TV) blockMini(why);
+                else Log.i(TAG, "mini: " + why + " - this channel shows its logo, the preview stays on");
             }
         });
         cName = Ui.tv(ctx, Ui.TITLE, Ui.PAPER, true);
@@ -2490,15 +2494,26 @@ public final class Guide extends FrameLayout {
     /** The mini window is on for this TV right now (Settings shows it). */
     public static String miniState(Context c, Store st) {
         if (!st.miniAuto()) return "Off";
-        if (!st.miniBlocked().isEmpty()) return "Auto (off: " + st.miniBlocked() + ")";
+        if (!st.miniBlocked().isEmpty()) return "Auto (off: " + (st.miniBlocked().startsWith("ERROR_CODE") || st.miniBlocked().startsWith("software") || st.miniBlocked().startsWith("main video") ? miniReason(st.miniBlocked()) : st.miniBlocked()) + ")"; // older installs stored the raw code
         int n = MiniPreview.avcInstances();
         return n >= 2 ? "Auto (on)" : "Auto (off: this TV has one video decoder)";
     }
 
     private void blockMini(String why) {
         Log.i(TAG, "mini: off for this TV - " + why);
-        host.store().setMiniBlocked(why.length() > 60 ? why.substring(0, 60) : why);
+        miniPolicy.reset(); // counting starts again if the viewer switches it back on
+        host.store().setMiniBlocked(miniReason(why));
         host.pill("Mini preview turned off for this TV");
+    }
+
+    /** What Settings shows after "Auto (off: …)": plain words, never a Media3 error code. */
+    static String miniReason(String why) {
+        String w = why == null ? "" : why;
+        if (w.startsWith("software decoder")) return "this TV plays a second video only in software";
+        if (w.startsWith("ERROR_CODE_DECODER")) return "this TV could not start a second video";
+        if (w.startsWith("ERROR_CODE_DECODING")) return "several channels could not play in the preview";
+        if (w.startsWith("main video dropped")) return "the main picture stuttered during previews";
+        return w.length() > 60 ? w.substring(0, 60) : w;
     }
 
     private void fitMini(int vw, int vh) {

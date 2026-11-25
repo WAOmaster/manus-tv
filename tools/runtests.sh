@@ -15,7 +15,7 @@ javac -encoding UTF-8 -nowarn -d $OUT -cp "$AJ" $(find src/lk/manus/iptv/data sr
 grep -v -E '^Note|warning' $OUT/javac.log || true
 rc=0
 case "$OSTYPE" in msys*|cygwin*|win32*) SEP=';';; *) SEP=':';; esac
-for t in AudioTest DataLayerTest DbMigrationTest FavGuardTest GroupingTest HlsTest M3uParserTest NormalizerTest SearchTest SubTrTest WebVttTest TitleCleanerTest MatcherTest RemindersTest AddServerTest BackupTest XtreamTest LibraryTest FilmResumeTest ContinueWatchingTest AddXtreamTest SeriesSourceTest SeriesLogicTest CatchupTest FilmOrderTest SeriesClassifierTest ZapLogicTest FailPlanTest ShowGroupsTest SubFitTest LoadTextTest ListToolsTest SearchFilterTest; do
+for t in AudioTest DataLayerTest DbMigrationTest FavGuardTest GroupingTest HlsTest M3uParserTest NormalizerTest SearchTest SubTrTest WebVttTest TitleCleanerTest MatcherTest RemindersTest AddServerTest BackupTest XtreamTest LibraryTest FilmResumeTest ContinueWatchingTest AddXtreamTest SeriesSourceTest SeriesLogicTest CatchupTest FilmOrderTest SeriesClassifierTest ZapLogicTest FailPlanTest ShowGroupsTest SubFitTest LoadTextTest ListToolsTest SearchFilterTest MiniPolicyTest; do
   echo "== $t"
   java -cp "$OUT$SEP$AJ" "$t" test/sample.m3u 2>&1 | tail -${TAILN:-3}
   [ "${PIPESTATUS[0]}" -eq 0 ] || rc=1

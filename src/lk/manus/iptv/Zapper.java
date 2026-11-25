@@ -129,13 +129,13 @@ final class Zapper {
         if (ps.idx == null) { guideWhenReady = true; return; }
         prepGuide();
         ps.ui.hidePill(); // a status pill from the picture underneath must not ride over the guide
-        if (ps.gaveUp) ps.ui.clearToast(); // nor the "isn't playing" message (it has no timeout): it stayed over every guide page (seen on the emulator)
         ps.guide.open();
         ps.ui.wmUpdate();
         if (Config.DEBUG && ps.bgSkipSec > 0) { ps.h.removeCallbacks(ps.fov.bgSkipR); ps.h.postDelayed(ps.fov.bgSkipR, ps.bgSkipSec * 1000L); ps.bgSkipSec = 0; }
     }
 
-    void prepGuide() {
+    void prepGuide() { // every way into the guide (Back / Left, Categories, Settings, Home shortcuts) passes here
+        if (ps.gaveUp) ps.ui.clearToast(); // the "isn't playing" message has no timeout: it stayed over every guide page (seen on the emulator)
         ps.h.removeCallbacks(ps.ui.hideBanner);
         ps.banner.setVisibility(View.GONE);
         ps.ui.stopBar();

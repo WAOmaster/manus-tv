@@ -263,6 +263,7 @@ final class EngineHost implements SurfaceHolder.Callback {
         }
         Log.i(TAG, "playing after " + (SystemClock.elapsedRealtime() - ps.t0) + " ms");
         ps.ui.shutter(false);
+        if (ps.ui.toastShows(Failover.NOT_PLAYING)) ps.ui.clearToast(); // an earlier channel's failure message never rides on a picture that plays
         if (ps.spike > 0) { spikeRecord("ok", ""); return; }
         if (ps.previewCh == null) {
             ps.prefs.edit().putString("last", ps.list.get(ps.index).url).apply();

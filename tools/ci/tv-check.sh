@@ -20,8 +20,8 @@ printf '%s' '<?xml version="1.0" encoding="utf-8" standalone="yes" ?><map><boole
 adb push /tmp/iptv.xml /data/local/tmp/iptv.xml >/dev/null
 adb shell "run-as $PKG mkdir -p shared_prefs && run-as $PKG cp /data/local/tmp/iptv.xml shared_prefs/iptv.xml && run-as $PKG ls shared_prefs" || echo "WARNING: could not mark setup done"
 adb logcat -c
-# starts on "Subtitle Test HD" (HLS + WebVTT) with its first subtitle track on: the M1 "never cut" check on the live path
-adb shell am start -n "$ACT" --es src "http://10.0.2.2:8000/playlist.m3u" --ez subsdef true --ei sub 0 --es tune "'Subtitle Test'" --es xtream "'http://10.0.2.2:8081|demo|demo123'" >/dev/null
+# starts on "Subtitle Test HD" (HLS + WebVTT) with track 1 on (track 0 is the empty CC track every HLS stream exposes): the M1 "never cut" check on the live path
+adb shell am start -n "$ACT" --es src "http://10.0.2.2:8000/playlist.m3u" --ez subsdef true --ei sub 1 --es tune "'Subtitle Test'" --es xtream "'http://10.0.2.2:8081|demo|demo123'" >/dev/null
 sleep 0.3; shot M1c-boot-a
 sleep 0.5; shot M1c-boot-b
 sleep 1; shot M1c-boot-c
@@ -31,14 +31,14 @@ sleep 32; shot M1a-live-subtitle-long-single-line
 
 echo "== M2: the For You list, row-number jump, sort chip, keypad letters, filter"
 open foryou 4; shot M2-all-number-sort
-k $D1; adb shell input keyevent $D2; sleep 0.4; shot M2-typed-12-jump
+adb shell input keyevent $D1 $D2; sleep 0.6; shot M2-typed-12-jump # one input call: each call takes ~1 s on the emulator
 sleep 2; k $D1; sleep 1.6; k $UP; shot M2-chips-focused
 k $OK; sleep 0.5; shot M2-sorted-AZ
 k $DOWN; k $D2; shot M2-key2-A
-k $D2; shot M2-key22-B
+adb shell input keyevent $D2 $D2; sleep 0.6; shot M2-key22-B # repeats must land inside 1.5 s
 k $D7; shot M2-key7-P
 k $D0; k $UP $RIGHT $OK; sleep 1.5; adb shell input text "news"; sleep 1.5; shot M2-filter-typed
-k $DOWN; sleep 1; shot M2-filtered-list
+k $BACK $DOWN; sleep 1; shot M2-filtered-list # Back closes the on-screen keyboard (it owns the D-pad while up)
 k $BACK; sleep 1; shot M2-filter-cleared-by-back
 k $UP; k $OK $OK; sleep 0.5; shot M2-sort-back-to-number
 

@@ -67,6 +67,8 @@ public final class Sources {
     public interface Callback {
         void onLoaded(Loaded l);
         void onError();
+        /** Start-up step in words (LoadText), on the main thread; only before the first list arrives. */
+        default void onStage(String text) { }
     }
 
     /** Result of checking a link before saving it. */
@@ -255,6 +257,7 @@ public final class Sources {
                 List<Channel> xt = new ArrayList<>(); // T95: Xtream live channels, read from the catalogue
                 try { xt = LiveSource.channels(Db.get()); } catch (Throwable t) { Log.w(TAG, "xtream live read failed: " + t.getClass().getSimpleName()); }
                 if (snap.isEmpty()) { deliver(cb, g, snap, new LinkedHashMap<String, List<Channel>>(), xt); return; } // no sources yet: an empty list, not an error
+                stage(cb, g, LoadText.reading(snap.size()));
                 Map<String, List<Channel>> by = new LinkedHashMap<>();
                 Set<String> cached = new HashSet<>();
                 for (Source s : snap) {
@@ -266,6 +269,7 @@ public final class Sources {
                 boolean changed = false;
                 for (Source s : snap) {
                     try {
+                        if (!any && !cached.contains(s.id)) stage(cb, g, LoadText.downloading(s.name)); // first run: nothing on screen yet, say which list is coming
                         Resp r = refresh(s, cached.contains(s.id));
                         if (r.code == 200) {
                             List<Channel> l = parse(s);
@@ -280,6 +284,10 @@ public final class Sources {
                 if (!any) main.post(new Runnable() { @Override public void run() { if (g == gen) cb.onError(); } });
             }
         }, "sources").start();
+    }
+
+    private void stage(final Callback cb, final int g, final String text) {
+        main.post(new Runnable() { @Override public void run() { if (g == gen) cb.onStage(text); } });
     }
 
     private synchronized void stamp(String id, int count) {

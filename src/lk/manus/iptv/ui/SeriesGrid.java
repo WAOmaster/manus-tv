@@ -84,7 +84,7 @@ public final class SeriesGrid extends LinearLayout {
         store = st;
         final List<Entry> es = SeriesNow.candidates(c, ix, st, ix.all);
         final int g = ++gen;
-        if (list.isEmpty()) sub.setText("Loading…"); // T102: quiet, in place
+        if (list.isEmpty()) sub.setText("Finding series on now…"); // T102: quiet, in place; says what it waits for
         new Thread(new Runnable() {
             @Override public void run() {
                 SeriesNow.loadCached(c, es); // cache only, no network

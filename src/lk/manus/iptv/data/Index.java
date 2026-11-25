@@ -168,6 +168,7 @@ public final class Index {
     }
 
     public List<Channel> search(String q) { return Search.run(all, folded, q); }
+    public List<Channel> search(String q, int max) { return Search.run(all, folded, q, max); }
 
     private static void add(Map<String, List<Channel>> m, String k, Channel c) {
         List<Channel> l = m.get(k);
@@ -225,6 +226,13 @@ public final class Index {
      * Callers must not modify the returned list.
      */
     public List<Channel> list(String id, Store s) { return out(id, raw(id, s), s); }
+
+    /** M2: list(id) in the user's chosen order for that list (A-Z / Most watched); Number = list() itself. Guide rows and channel up/down both use this, so row N is channel N. */
+    public List<Channel> sorted(String id, Store s) {
+        List<Channel> l = list(id, s);
+        int m = id.equals("search") || id.startsWith("src:") ? ListTools.SORT_NUM : s.sortMode(id);
+        return m == ListTools.SORT_NUM ? l : ListTools.sort(l, m, sig);
+    }
 
     @SuppressWarnings("unchecked")
     private List<Channel> out(String id, List<Channel> r, Store s) {

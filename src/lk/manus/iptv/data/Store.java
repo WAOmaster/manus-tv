@@ -182,6 +182,9 @@ public final class Store {
 
     public String section() { return p.getString("sec", "foryou"); }
     public void setSection(String id) { p.edit().putString("sec", id).commit(); }
+    /** M2: each list's sort (ListTools.SORT_*), remembered per list id; Number (the list's own order) by default. */
+    public int sortMode(String listId) { return p.getInt("sort:" + listId, ListTools.SORT_NUM); }
+    public void setSortMode(String listId, int mode) { if (mode == ListTools.SORT_NUM) p.edit().remove("sort:" + listId).commit(); else p.edit().putInt("sort:" + listId, mode).commit(); }
 
     // ---- settings ----
 
@@ -251,14 +254,21 @@ public final class Store {
     }
 
     /** For You picker; null-free, defaults to the original curated behaviour. */
-    public Set<String> fyCountries() { return set("fy_countries", Curated.DEFAULT_COUNTRIES); }
+    public Set<String> fyCountries() { return ccSet(set("fy_countries", Curated.DEFAULT_COUNTRIES), false); }
     public Set<String> fyCats() { return set("fy_cats", Curated.DEFAULT_CATS); }
     public void setFyCountries(Set<String> s) { p.edit().putString("fy_countries", String.join("\n", s)).commit(); }
     public void setFyCats(Set<String> s) { p.edit().putString("fy_cats", String.join("\n", s)).commit(); }
     public void resetFy() { p.edit().remove("fy_countries").remove("fy_cats").commit(); }
 
     /** Groups hidden from the sidebar's level-2 lists: "cc:jp", "cat:News". */
-    public Set<String> hidden() { return set("hidden", new ArrayList<String>()); }
+    public Set<String> hidden() { return ccSet(set("hidden", new ArrayList<String>()), true); }
+
+    /** Choices saved before country codes were unified: "gb" / "cc:gb" read as "uk" / "cc:uk" (order kept, duplicates dropped). */
+    private static Set<String> ccSet(Set<String> in, boolean prefixed) {
+        Set<String> out = new LinkedHashSet<>();
+        for (String v : in) out.add(prefixed ? (v.equalsIgnoreCase("cc:gb") ? "cc:uk" : v) : Channel.cc(v));
+        return out;
+    }
     public void hide(String id) { Set<String> s = hidden(); s.add(id); p.edit().putString("hidden", String.join("\n", s)).commit(); }
     public void unhide(String id) { Set<String> s = hidden(); s.remove(id); p.edit().putString("hidden", String.join("\n", s)).commit(); }
 

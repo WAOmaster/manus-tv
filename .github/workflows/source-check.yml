@@ -1,0 +1,55 @@
+name: source-check
+# Tests one real playlist (tools/ci/source-url.txt): ffprobe liveness from the runner, then the app on an Android TV emulator
+# with that playlist as its only source (screenshots + which flips played). Runs when the URL or these scripts change.
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['tools/ci/source-*', 'tools/fetch-libs.sh', '.github/workflows/source-check.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: source-check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Cached app libraries (Media3, ML Kit; sha256-pinned by tools/fetch-libs.sh)
+        uses: actions/cache@v4
+        with:
+          path: libs
+          key: libs-${{ hashFiles('tools/fetch-libs.sh') }}
+      - name: Android SDK pieces
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.1.0" "platforms;android-36" > /dev/null
+      - name: Build DEBUG APK (no ARM-only libs)
+        run: ANDROID_SDK=$ANDROID_HOME DEBUG=1 FLAVOR=full DEFAULT_IPTVORG=1 NATIVE=0 bash build.sh
+      - name: Link check (ffprobe from the runner)
+        run: |
+          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg > /dev/null # a stale package list 404s on superseded security updates
+          mkdir -p shots
+          python3 tools/ci/source-probe.py "$(cat tools/ci/source-url.txt)" shots/probe.md 60 "UK,News" | tee shots/probe-summary.txt
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: App on the Android TV emulator
+        uses: reactivecircus/android-emulator-runner@v2.33.0
+        with:
+          api-level: 34
+          target: android-tv
+          arch: x86
+          profile: tv_1080p
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: adb install -r manus-tv.apk && bash tools/ci/source-check.sh shots "$(cat tools/ci/source-url.txt)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-check
+          path: shots/
+          retention-days: 14

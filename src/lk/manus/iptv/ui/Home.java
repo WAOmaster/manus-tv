@@ -132,7 +132,7 @@ public final class Home extends LinearLayout {
         final List<Channel> fav = ix.list("fav", st), rec = ix.list("recent", st), movies = ix.list("cat:Movies", st);
         final boolean on = Films.enabled(c);
         final int g = ++gen;
-        if (firstShown() == null) { facts.setTextColor(Ui.MUTED); facts.setText("Loading…"); } // T102: quiet, in place
+        if (firstShown() == null) { facts.setTextColor(Ui.MUTED); facts.setText("Finding what's on now…"); } // T102: quiet, in place; says what it waits for
         new Thread(new Runnable() {
             @Override public void run() {
                 final List<lk.manus.iptv.data.Library.ContinueItem> cw = lk.manus.iptv.data.Library.continueWatching(lk.manus.iptv.data.Db.get(), 20);

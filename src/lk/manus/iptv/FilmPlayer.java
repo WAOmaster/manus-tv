@@ -62,6 +62,7 @@ final class FilmPlayer {
     private TextView audioMsgTv;
     private TextView otherAudioBtn;
     private TextView audioBackBtn;
+    private TextView subHintTv;
     private boolean audioCardUp;
 
     // Next-episode pill UI & state (T93a)
@@ -170,6 +171,12 @@ final class FilmPlayer {
         LinearLayout.LayoutParams tkp = new LinearLayout.LayoutParams(-1, Ui.u(6));
         tkp.topMargin = Ui.u(10);
         barBox.addView(progressBar, tkp);
+
+        subHintTv = Ui.tv(c, Ui.CAPTION, Ui.MUTED, false); // "▼  Subtitles: English" when the film has subtitles: Down opens the menu
+        subHintTv.setVisibility(View.GONE);
+        LinearLayout.LayoutParams shp = new LinearLayout.LayoutParams(-2, -2);
+        shp.topMargin = Ui.u(8);
+        barBox.addView(subHintTv, shp);
 
         FrameLayout.LayoutParams bp = new FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM);
         int mx = Ui.marginX(), my = Ui.marginY();
@@ -361,6 +368,10 @@ final class FilmPlayer {
         ps.playing = false;
 
         hideAudioFail();
+        ps.subsCtl.clearSubs(); // the live channel's tracks and choice never carry into a film
+        ps.subsCtl.filmMode("film:" + item.id);
+        ps.ui.showToastNow(lk.manus.iptv.data.LoadText.film(item.title, startPos, isCatchup), 30000); // the screen was blank until the picture came: say what is opening
+        openingUp = true;
 
         final int g = ++ps.gen;
         final Engine.Listener ls = new Engine.Listener() {
@@ -374,6 +385,7 @@ final class FilmPlayer {
                 if ("ended".equalsIgnoreCase(detail)) {
                     onFilmEnded();
                 } else {
+                    clearOpening(); // no "Opening…" pill left over a failed start
                     Log.i(TAG, "film playback error: " + detail);
                 }
             }
@@ -437,6 +449,8 @@ final class FilmPlayer {
 
     private void onPlaying() {
         ps.playing = true;
+        ps.ui.shutter(false); // a failed live channel's cover never stays over a film
+        clearOpening();
         ps.guide.hideNow();
         filmTitleTv.setText(currentFilm.title);
         showBar(4000);
@@ -467,23 +481,18 @@ final class FilmPlayer {
             }
         }
 
-        // 2. Saved subtitle choice
-        String savedSubs = db.choice("subs", "film:" + currentFilm.id);
-        if (!savedSubs.isEmpty()) {
-            List<Engine.Track> sTracks = ps.eng.subtitleTracks();
-            for (Engine.Track t : sTracks) {
-                if (savedSubs.equalsIgnoreCase(t.label) || savedSubs.equalsIgnoreCase(t.lang) || savedSubs.equals(String.valueOf(t.id))) {
-                    ps.eng.selectSubtitle(t.id);
-                    break;
-                }
-            }
-        }
+        // 2. Subtitles: the shared controller lists the film's tracks and applies this film's choice, else "Subtitles on by default"
+        ps.subsCtl.scanTracks();
+        if (barBox != null && barBox.getVisibility() == View.VISIBLE) updateBarUi();
     }
 
     void showBar(long autoHideMs) {
         if (barBox == null) return;
         updateBarUi();
         barBox.setVisibility(View.VISIBLE);
+        barBox.post(new Runnable() { @Override public void run() { // subtitles move above the bar instead of being covered by it (seen on the emulator)
+            if (barBox.getVisibility() == View.VISIBLE) ps.ui.liftSubs(barBox.getHeight() + Ui.u(12));
+        } });
         ps.h.removeCallbacks(hideBarR);
         if (autoHideMs > 0) {
             ps.h.postDelayed(hideBarR, autoHideMs);
@@ -493,6 +502,7 @@ final class FilmPlayer {
     void hideBar() {
         ps.h.removeCallbacks(hideBarR);
         if (barBox != null) barBox.setVisibility(View.GONE);
+        ps.ui.liftSubs(0);
     }
 
     private void updateBarUi() {
@@ -503,6 +513,12 @@ final class FilmPlayer {
 
         String status = isPaused ? "   ❚❚ Paused" : "";
         filmTitleTv.setText(currentFilm != null ? (currentFilm.title + status) : ("Film" + status));
+
+        if (subHintTv != null) {
+            boolean has = ps.subsCtl.hasSubs() && !catchup; // catch-up uses Down for "Back to live"
+            subHintTv.setVisibility(has ? View.VISIBLE : View.GONE);
+            if (has) subHintTv.setText("▼  Subtitles: " + ps.subsCtl.currentLabel());
+        }
 
         String posStr = FilmResume.formatTime(pos);
         String durStr = dur > 0 ? FilmResume.formatTime(dur) : "--:--";
@@ -623,8 +639,13 @@ final class FilmPlayer {
         }
     }
 
+    private boolean openingUp; // the "Opening X…" pill from start() is still up
+
+    private void clearOpening() { if (openingUp) { openingUp = false; ps.ui.clearToast(); } }
+
     void stop(boolean returnToDetails) {
         if (!active) return;
+        clearOpening();
         saveProgress(true); // synchronous save so Details can immediately read the updated state
 
         active = false;
@@ -648,6 +669,8 @@ final class FilmPlayer {
             ps.eng.release(null);
             ps.eng = null;
         }
+        ps.subsCtl.clearSubs();
+        ps.subsCtl.filmMode(null); // live TV remembers subtitles per channel again
 
         Library.Item item = currentFilm;
         currentFilm = null;
@@ -666,7 +689,15 @@ final class FilmPlayer {
         }
     }
 
+    /** Subtitle menu for the film (Off + its tracks); the choice is remembered for this film. */
+    private void openSubtitles() {
+        ps.h.removeCallbacks(hideBarR);
+        hideBar();
+        ps.subsCtl.openSubMenu();
+    }
+
     void showAudioFail() {
+        clearOpening();
         audioCardUp = true;
         hideBar();
         if (audioCard != null) {
@@ -824,6 +855,16 @@ final class FilmPlayer {
         int k = e.getKeyCode();
         int a = e.getAction();
 
+        if (ps.menuBox.getVisibility() == View.VISIBLE) { // the subtitle / audio menu owns the keys while it is up
+            if (a == KeyEvent.ACTION_DOWN) ps.menus.menuKey(k);
+            return true;
+        }
+        String act = lk.manus.iptv.ui.Keys.action(k);
+        if ((lk.manus.iptv.ui.Keys.SUBS.equals(act) || k == KeyEvent.KEYCODE_MENU) && !audioCardUp) { // CC / yellow / Menu: subtitles
+            if (a == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) openSubtitles();
+            return true;
+        }
+
         if (audioCardUp) {
             // When audio format card is up, route Back and let buttons handle clicks
             if (k == KeyEvent.KEYCODE_BACK) {
@@ -907,7 +948,9 @@ final class FilmPlayer {
 
         if (k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_DOWN) {
             if (a == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
-                showBar(4000);
+                // Down with the bar up opens subtitles (the bar says so); otherwise Up / Down just show the bar
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN && barBox != null && barBox.getVisibility() == View.VISIBLE && ps.subsCtl.hasSubs()) openSubtitles();
+                else showBar(4000);
             }
             return true;
         }

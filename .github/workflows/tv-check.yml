@@ -1,0 +1,63 @@
+name: tv-check
+# Builds a DEBUG APK on Linux, runs the unit tests, then drives it on an Android TV emulator with remote keys
+# (tools/ci/tv-check.sh) and uploads one screenshot per check. Invented test content only (tools/ci, mock-xtream).
+on:
+  push:
+    branches: ['claude/**']
+    paths: ['src/**', 'res/**', 'AndroidManifest.xml', 'build.sh', 'tools/**', '!tools/ci/source-*', 'test/**', '.github/workflows/tv-check.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: tv-check-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: {distribution: temurin, java-version: '17'}
+      - name: Cached app libraries (Media3, ML Kit; sha256-pinned by tools/fetch-libs.sh)
+        uses: actions/cache@v4
+        with:
+          path: libs
+          key: libs-${{ hashFiles('tools/fetch-libs.sh') }}
+      - name: Android SDK pieces
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;36.1.0" "platforms;android-36" > /dev/null
+      - name: Unit tests
+        run: ANDROID_SDK=$ANDROID_HOME bash tools/runtests.sh
+      - name: Build DEBUG APK (no ARM-only libs, so it installs on the x86 emulator)
+        run: ANDROID_SDK=$ANDROID_HOME DEBUG=1 FLAVOR=full DEFAULT_IPTVORG=1 NATIVE=0 bash build.sh
+      - name: Test media, playlist and mock servers
+        run: |
+          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg > /dev/null # a stale package list 404s on superseded security updates
+          mkdir -p "$RUNNER_TEMP/www" "$RUNNER_TEMP/posters"
+          bash tools/ci/make-media.sh "$RUNNER_TEMP/media" "$RUNNER_TEMP/www"
+          python3 tools/ci/playlist.py "$RUNNER_TEMP/www/playlist.m3u"
+          nohup python3 -m http.server 8000 -d "$RUNNER_TEMP/www" > "$RUNNER_TEMP/www.log" 2>&1 &
+          MOCK_MEDIA="$RUNNER_TEMP/media/film.mp4" MOCK_LIVE="$RUNNER_TEMP/media/live.ts" POSTERS_DIR="$RUNNER_TEMP/posters" \
+            MOCK_LOG_FILE="$RUNNER_TEMP/mock.log" nohup python3 tools/mock-xtream.py 8081 > "$RUNNER_TEMP/mock-out.log" 2>&1 &
+          sleep 2
+          curl -sf -o /dev/null http://127.0.0.1:8000/playlist.m3u && curl -sf -o /dev/null "http://127.0.0.1:8081/player_api.php?username=demo&password=demo123"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Android TV emulator run
+        uses: reactivecircus/android-emulator-runner@v2.33.0
+        with:
+          api-level: 34
+          target: android-tv
+          arch: x86
+          profile: tv_1080p
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: adb install -r manus-tv.apk && bash tools/ci/tv-check.sh shots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tv-check-shots
+          path: shots/
+          retention-days: 14

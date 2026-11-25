@@ -27,6 +27,7 @@ import lk.manus.iptv.ui.Guide;
 import lk.manus.iptv.ui.NowBar;
 import lk.manus.iptv.ui.Modal;
 import lk.manus.iptv.ui.Ring;
+import lk.manus.iptv.ui.LoadingLine;
 import lk.manus.iptv.ui.LogoLoader;
 import lk.manus.iptv.ui.Ui;
 import lk.manus.iptv.data.Sources;
@@ -72,6 +73,7 @@ final class Overlays {
         @Override public void run() {
             if (ps.playing || ps.fov.autoSkip() || ps.previewCh != null || ps.guide.isOpen() || ps.userPaused || ps.failUp) return;
             ps.connBox.setVisibility(View.VISIBLE);
+            shutter(true); // slow start: the previous channel's frozen frame must not sit under this channel's name
             ringTick.run();
         }
     };
@@ -128,6 +130,10 @@ final class Overlays {
             @Override public void onSurfaceTextureUpdated(SurfaceTexture st) { }
         });
         root.addView(ps.tex, new FrameLayout.LayoutParams(-1, -1, Gravity.CENTER));
+        ps.shutter = new View(ps.act); // above the video, below every overlay (added after both video views, before the rest)
+        ps.shutter.setBackgroundColor(Ui.INK);
+        ps.shutter.setVisibility(View.GONE);
+        root.addView(ps.shutter, new FrameLayout.LayoutParams(-1, -1));
         root.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
             @Override public void onLayoutChange(View v, int l, int t, int r, int b, int ol, int ot, int or, int ob) { ps.host.fitTex(); }
         });
@@ -137,7 +143,7 @@ final class Overlays {
         ps.message.setGravity(Gravity.CENTER);
         root.addView(ps.message, new FrameLayout.LayoutParams(-1, -1));
 
-        // T105b: cold-start screen = splash look (logo + name + quiet Loading…); removed by PlayerActivity.hideBoot() once channels or an error arrive
+        // T105b: cold-start screen = splash look (logo + name + a LoadingLine naming each start-up step); removed by PlayerActivity.hideBoot() once channels or an error arrive
         FrameLayout boot = new FrameLayout(ps.act);
         boot.setBackgroundColor(Ui.INK);
         ImageView bootLogo = new ImageView(ps.act);
@@ -150,9 +156,12 @@ final class Overlays {
         TextView bn = Ui.tv(ps.act, Ui.TITLE, Ui.PAPER, true);
         bn.setText("MANUS TV");
         bt.addView(bn);
-        TextView bw = Ui.tv(ps.act, Ui.BODY, Ui.MUTED, false);
-        bw.setText("Loading…");
-        bt.addView(bw);
+        LoadingLine bw = new LoadingLine(ps.act, Ui.u(220)); // names each step (reading / downloading / sorting), Signal hairline sweeping under it
+        bw.set(lk.manus.iptv.data.LoadText.reading(1));
+        LinearLayout.LayoutParams bwp = new LinearLayout.LayoutParams(-2, -2);
+        bwp.topMargin = Ui.u(10);
+        bt.addView(bw, bwp);
+        ps.bootLine = bw;
         FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL | Gravity.CENTER_VERTICAL);
         tp.topMargin = bs / 2 + Ui.u(40); // just under the logo
         boot.addView(bt, tp);
@@ -283,7 +292,10 @@ final class Overlays {
         // subtitle line: shares the bottom column with the banner, so it always sits above it (UX-SPEC 4)
         ps.subTv = Ui.tv(ps.act, Ui.BODY, Ui.PAPER, false);
         ps.subTv.setSingleLine(false);
-        ps.subTv.setMaxLines(3);
+        ps.subTv.setEllipsize(null); // never "…": a long cue shrinks instead (Subs.showCue + SubFit)
+        ps.subTv.setMaxLines(Integer.MAX_VALUE);
+        ps.subTv.setLineSpacing(0, 1.08f);
+        ps.subTv.setShadowLayer(Ui.u(3), 0, Ui.u(1), 0xCC000000); // readable on bright scenes as well as through the box
         ps.subTv.setGravity(Gravity.CENTER);
         ps.subTv.setBackground(Ui.rect(Ui.alpha(Ui.INK, 0.6f), 10));
         ps.subTv.setPadding(Ui.u(16), Ui.u(6), Ui.u(16), Ui.u(6));
@@ -400,7 +412,7 @@ final class Overlays {
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) bottomStack.getLayoutParams();
         lp.setMargins(mx, 0, mx, my);
         bottomStack.setLayoutParams(lp);
-        ps.subTv.setMaxWidth(Ui.safeW() * 6 / 10);
+        ps.subTv.setMaxWidth(Ui.safeW() * 86 / 100); // 60% wrapped two-speaker cues into 4+ lines and the last one was cut
         toast.setMaxWidth(Ui.safeW() * 6 / 10);
         lp = (FrameLayout.LayoutParams) toast.getLayoutParams(); lp.setMargins(0, top, 0, 0); toast.setLayoutParams(lp);
         lp = (FrameLayout.LayoutParams) ps.numTv.getLayoutParams(); lp.setMargins(0, top, mx, 0); ps.numTv.setLayoutParams(lp);
@@ -424,6 +436,17 @@ final class Overlays {
     }
 
     /** Ends a status pill only; a message pill keeps its own timer. */
+    /** Moves the subtitle line (and the bottom stack it lives in) up by px, e.g. above the film's playback bar; 0 = back to its place. */
+    void liftSubs(int px) {
+        float y = -Math.max(0, px);
+        if (bottomStack.getTranslationY() == y) return;
+        bottomStack.animate().cancel();
+        if (Ui.anim()) bottomStack.animate().translationY(y).setDuration(160).setInterpolator(Ui.DEC).start(); else bottomStack.setTranslationY(y);
+    }
+
+    /** Black cover over the video: on while a channel failed or is slow to start, off as soon as a picture plays. */
+    void shutter(boolean on) { if (ps.shutter != null) ps.shutter.setVisibility(on ? View.VISIBLE : View.GONE); }
+
     void hidePill() { if (pillKind == 1) { toast.setVisibility(View.GONE); pillKind = 0; } }
 
     void clearToast() { if (ps.remind.offering() || ps.sleep.warning()) return; ps.h.removeCallbacks(hideToast); if (pillKind == 2) { toast.setVisibility(View.GONE); pillKind = 0; } }

@@ -114,13 +114,13 @@ final class Failover {
         ps.altFor = null;
         if (!autoSkip()) { // every link failed: say so and stay until the viewer zaps (OK tries again)
             ps.gaveUp = true;
-            ps.ui.setState(""); // no "Loading…" under the message
-            ps.ui.showToast(NOT_PLAYING, 0);
+            ps.ui.setState(""); // no "Tuning in…" under the message
+            ps.ui.shutter(true); ps.ui.showToast(NOT_PLAYING, 0); // black, not the previous channel's last frame
             return;
         }
         if (++ps.fails >= MAX_FAILS) {
             ps.gaveUp = true;
-            ps.ui.showToast("Several channels failed — check your internet. Press OK to retry.", 0);
+            ps.ui.shutter(true); ps.ui.showToast("Several channels failed — check your internet. Press OK to retry.", 0);
             return;
         }
         ps.ui.showToast("This channel isn't playing. Trying the next one…", 1500);
@@ -134,7 +134,7 @@ final class Failover {
             ps.gaveUp = true;
             ps.ui.hidePill();
             Log.i(NET, "reconnect gave up");
-            ps.ui.showToast(NOT_PLAYING, 0);
+            ps.ui.shutter(true); ps.ui.showToast(NOT_PLAYING, 0); // black, not the previous channel's last frame
             return;
         }
         long d = 1000L << ps.rc++;
@@ -149,7 +149,8 @@ final class Failover {
     boolean autoSkip() { return ps.dbgAutoSkip != null ? ps.dbgAutoSkip : ps.store.autoSkip(); }
 
     private void showFail(final Channel rep, List<Channel> alts) {
-        ps.h.removeCallbacks(ps.ui.hideBanner); // one thing at a time: no "Loading…" banner or pill under the card
+        ps.ui.shutter(true); // the card sits on black, not on the previous channel's frozen frame
+        ps.h.removeCallbacks(ps.ui.hideBanner); // one thing at a time: no "Tuning in…" banner or pill under the card
         ps.banner.animate().cancel();
         ps.banner.setVisibility(View.GONE);
         ps.ui.setState("");

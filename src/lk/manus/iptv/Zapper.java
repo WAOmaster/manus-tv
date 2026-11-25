@@ -49,7 +49,7 @@ final class Zapper {
         ps.ui.hidePill();
         ps.ui.clearToast();
         ps.ui.updateBanner();
-        ps.ui.setState("Loading…");
+        ps.ui.setState(lk.manus.iptv.data.LoadText.tuning());
         ps.ui.showBanner();
         ps.h.removeCallbacks(ps.host.startR);
         ps.h.postDelayed(ps.host.startR, DEBOUNCE_MS);
@@ -100,9 +100,9 @@ final class Zapper {
         int pos = ps.list.indexOf(c);
         if (pos >= 0) { zapTo(pos, 1); return; }
         String sec = !c.country.isEmpty() && ps.idx.countries.containsKey(c.country) ? "cc:" + c.country : "all";
-        List<Channel> l = ps.idx.list(sec, ps.store);
+        List<Channel> l = ps.idx.sorted(sec, ps.store);
         pos = l.indexOf(c);
-        if (pos < 0) { sec = "all"; l = ps.idx.list(sec, ps.store); pos = l.indexOf(c); }
+        if (pos < 0) { sec = "all"; l = ps.idx.sorted(sec, ps.store); pos = l.indexOf(c); }
         if (pos < 0) { ps.ui.showToast("No previous channel", 1800); return; }
         commit(sec, ps.idx.title(sec), l, pos);
     }
@@ -134,7 +134,8 @@ final class Zapper {
         if (Config.DEBUG && ps.bgSkipSec > 0) { ps.h.removeCallbacks(ps.fov.bgSkipR); ps.h.postDelayed(ps.fov.bgSkipR, ps.bgSkipSec * 1000L); ps.bgSkipSec = 0; }
     }
 
-    void prepGuide() {
+    void prepGuide() { // every way into the guide (Back / Left, Categories, Settings, Home shortcuts) passes here
+        if (ps.gaveUp) ps.ui.clearToast(); // the "isn't playing" message has no timeout: it stayed over every guide page (seen on the emulator)
         ps.h.removeCallbacks(ps.ui.hideBanner);
         ps.banner.setVisibility(View.GONE);
         ps.ui.stopBar();
@@ -165,7 +166,7 @@ final class Zapper {
             ps.h.removeCallbacks(ps.fov.watchdog);
             ps.h.removeCallbacks(ps.fov.reconnectR);
             ps.reconnecting = false;
-            ps.ui.setState("Loading…");
+            ps.ui.setState(lk.manus.iptv.data.LoadText.tuning());
             ps.h.removeCallbacks(ps.host.startR);
             ps.h.post(ps.host.startR);
         }
@@ -182,6 +183,7 @@ final class Zapper {
         }
         ps.previewCh = null;
         if (ps.list == null) return;
+        if (ps.gaveUp) ps.ui.showToast(Failover.NOT_PLAYING, 0); // back on the channel that failed: say so again (a new choice resets gaveUp)
         ps.ui.wmUpdate();
         ps.subsCtl.showCue();
         if (ps.eng != null && ps.eng.smart()) ps.tsh.tsUpdate();

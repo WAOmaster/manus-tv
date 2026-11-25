@@ -296,7 +296,7 @@ public final class Library extends LinearLayout {
     private void loadPage(final boolean resetFocus) {
         if (isSearchMode) return;
         loadingPage = true;
-        if (list.isEmpty() && !syncing) { sub.setText("Loading…"); sub.setVisibility(VISIBLE); } // T102: quiet, in place
+        if (list.isEmpty() && !syncing) { sub.setText(isSeries ? "Loading your series…" : "Loading your films…"); sub.setVisibility(VISIBLE); } // T102: quiet, in place; says what it waits for
         final int querySort = sort;
         final String queryCat = selectedCat;
         final boolean onChip = chipsRow.hasFocus(); // a chip press must leave focus on the chip

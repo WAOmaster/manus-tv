@@ -143,6 +143,22 @@ public final class Guide extends FrameLayout {
     private final TextView phoneBtn;     // Search section: "Type on your phone"
     private boolean focusResults;        // text arrived from the phone: when its results show, the cursor goes to them
     private String oSec, oUrl; // where playback started: the page ('home' / 'films') and the channel it tuned (null = a film)
+    private String oZap; // the list that playback was committed into: zapping inside it still counts as the same visit (Back = the tile you clicked)
+    // M2: find inside any list with the remote: per-list sort, a name filter, keypad letter jump / row-number jump
+    private LinearLayout tools; // header row over a channel list: [Sort: …] [Filter] / filter box
+    private TextView sortChip, filterChip, jumpTv;
+    private EditText filterEt;
+    private String filterQ = "", filterFor; // the filter text and the list id it applies to (cleared when another list shows)
+    private int lastDigit = -1, digitPress;
+    private long digitAt;
+    private String numBuf = "";
+    private static final long KEY_REPEAT_MS = 1500, NUM_WAIT_MS = 1200;
+    // M3: search filters for the remote, a chip row under "Type on your phone"
+    private android.widget.HorizontalScrollView sfScroll;
+    private TextView sfType, sfCountry, sfCat, sfQuality, sfFav, sfClear;
+    private final lk.manus.iptv.data.SearchFilter sfilter = new lk.manus.iptv.data.SearchFilter();
+    private View sfLast; // the chip the cursor was last on (Up from the results returns there)
+    private String detFrom; // the page a Details page was opened over when its film started ('home' / 'lib' / 'libsearch' / 'series'): rebuilt under Details on return
     private boolean detailsOnly;   // opened from the banner: just the Details page over live TV, no lists
     private final BaseAdapter railAd, listAd;
     private final LinearLayout card, chips;
@@ -151,6 +167,8 @@ public final class Guide extends FrameLayout {
     private final TextureView cTex;
     private final MiniPreview mini;
     private int miniDrop0;
+    private final lk.manus.iptv.player.MiniPolicy miniPolicy = new lk.manus.iptv.player.MiniPolicy(); // one odd channel skips that channel, not the TV
+    private String miniUrl = "";
     private int avc = -1;                  // H.264 hardware decoder instances (checked once)
     private final TextView cName, cInfo, cSpeed, cStatus, cNow, cTimes, cNext;
     private final NowBar cBar;
@@ -198,8 +216,9 @@ public final class Guide extends FrameLayout {
     private final Runnable liveR = new Runnable() {
         @Override public void run() {
             Channel c = selected();
-            if (c == null || c.url.equals(liveUrl) || !miniOn()) return; // the playing channel is already on screen
+            if (c == null || c.url.equals(liveUrl) || !miniOn() || miniPolicy.skip(c.url)) return; // the playing channel is already on screen; a channel that failed here shows its logo
             miniDrop0 = host.mainDropped();
+            miniUrl = c.url;
             mini.start(c, c.url, cTex);
             h.removeCallbacks(miniWatchR);
             h.postDelayed(miniWatchR, 5000);
@@ -227,7 +246,7 @@ public final class Guide extends FrameLayout {
     private final Runnable idleR = new Runnable() {
         @Override public void run() {
             // never close under a text box (search / add-source form) or an open dialog
-            if (searchEt.hasFocus() || settings.hasTextFocus() || dlg.getVisibility() == VISIBLE || phone.isUp()) { h.postDelayed(idleR, IDLE_MS); return; }
+            if (searchEt.hasFocus() || filterEt.hasFocus() || settings.hasTextFocus() || dlg.getVisibility() == VISIBLE || phone.isUp()) { h.postDelayed(idleR, IDLE_MS); return; }
             Log.i(TAG, "guide idle timeout");
             dismiss(true);
         }
@@ -368,6 +387,53 @@ public final class Guide extends FrameLayout {
         LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-1, -2);
         pp.setMargins(Ui.u(12), 0, Ui.u(12), Ui.u(6));
         c2.addView(phoneBtn, pp);
+        sfScroll = new android.widget.HorizontalScrollView(ctx);
+        sfScroll.setHorizontalScrollBarEnabled(false);
+        sfScroll.setOverScrollMode(OVER_SCROLL_NEVER);
+        sfScroll.setClipToPadding(false);
+        LinearLayout sfRow = new LinearLayout(ctx);
+        sfRow.setOrientation(LinearLayout.HORIZONTAL);
+        sfRow.setPadding(Ui.u(4), Ui.u(4), Ui.u(4), Ui.u(4)); // room for the focus ring
+        sfType = toolChip(ctx); sfCountry = toolChip(ctx); sfCat = toolChip(ctx); sfQuality = toolChip(ctx); sfFav = toolChip(ctx); sfClear = toolChip(ctx);
+        sfClear.setText("✕  Clear filters");
+        for (TextView t : new TextView[]{sfType, sfCountry, sfCat, sfQuality, sfFav, sfClear}) {
+            LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2, -2);
+            cp.rightMargin = Ui.u(8);
+            sfRow.addView(t, cp);
+        }
+        sfScroll.addView(sfRow);
+        sfScroll.setVisibility(GONE);
+        LinearLayout.LayoutParams sfp = new LinearLayout.LayoutParams(-1, -2);
+        sfp.setMargins(Ui.u(8), 0, Ui.u(8), Ui.u(4));
+        c2.addView(sfScroll, sfp);
+        tools = new LinearLayout(ctx);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+        sortChip = toolChip(ctx);
+        filterChip = toolChip(ctx);
+        filterEt = new EditText(ctx);
+        filterEt.setSingleLine(true);
+        Ui.size(filterEt, Ui.CAPTION);
+        filterEt.setTextColor(Ui.PAPER);
+        filterEt.setHintTextColor(Ui.MUTED);
+        filterEt.setHint("Filter this list");
+        filterEt.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        filterEt.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_FULLSCREEN);
+        filterEt.setPadding(Ui.u(14), Ui.u(6), Ui.u(14), Ui.u(6));
+        android.graphics.drawable.StateListDrawable fbg = new android.graphics.drawable.StateListDrawable();
+        fbg.addState(new int[]{android.R.attr.state_focused}, Ui.ring());
+        fbg.addState(new int[]{}, Ui.rect(Ui.PANEL, 12));
+        filterEt.setBackground(fbg);
+        filterEt.setVisibility(GONE);
+        LinearLayout.LayoutParams tcp = new LinearLayout.LayoutParams(-2, -2);
+        tcp.rightMargin = Ui.u(8);
+        tools.addView(sortChip, tcp);
+        tools.addView(filterChip, new LinearLayout.LayoutParams(-2, -2));
+        tools.addView(filterEt, new LinearLayout.LayoutParams(0, -2, 1));
+        tools.setVisibility(GONE);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, -2);
+        tlp.setMargins(Ui.u(18), 0, Ui.u(12), Ui.u(6));
+        c2.addView(tools, tlp);
         list = newList();
         listAd = new BaseAdapter() {
             @Override public int getCount() { return items.size(); }
@@ -403,6 +469,15 @@ public final class Guide extends FrameLayout {
         empty.setGravity(Gravity.CENTER);
         empty.setPadding(Ui.u(40), 0, Ui.u(40), 0);
         col2.addView(empty, new LayoutParams(-1, -1));
+        jumpTv = Ui.tv(ctx, Ui.DISPLAY, Ui.PAPER, true); // M2: the letter or number being jumped to, big, top-right of the list
+        jumpTv.setGravity(Gravity.CENTER);
+        jumpTv.setMinWidth(Ui.u(76));
+        jumpTv.setPadding(Ui.u(18), Ui.u(10), Ui.u(18), Ui.u(10));
+        jumpTv.setBackground(Ui.card(0.95f, 16));
+        jumpTv.setVisibility(GONE);
+        LayoutParams jlp = new LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        jlp.setMargins(0, Ui.u(8), Ui.u(18), 0);
+        col2.addView(jumpTv, jlp);
         content.addView(col2, new LinearLayout.LayoutParams(0, -1));
         settings = new SettingsView(ctx, new SettingsView.Host() {
             @Override public Index index() { return Guide.this.host.index(); }
@@ -465,7 +540,7 @@ public final class Guide extends FrameLayout {
             @Override public void details(Films.Entry e) { showDetails(e); }
             @Override public void channel(String id, List<Channel> l, int pos) {
                 if (pos < 0 || pos >= l.size()) return;
-                markOrigin(l.get(pos).url);
+                markOrigin(l.get(pos).url, id);
                 host.onCommit(id, host.index().title(id), l, pos);
                 hide();
             }
@@ -473,7 +548,7 @@ public final class Guide extends FrameLayout {
                 if ("episode".equals(item.kind)) { // series tile: OK plays that episode, resuming if it was started
                     lk.manus.iptv.data.Db db = lk.manus.iptv.data.Db.get();
                     lk.manus.iptv.data.Db.Progress pr = db != null ? db.progress(item.id) : null;
-                    markOrigin(null);
+                    markOrigin(null, null);
                     host.playFilm(item, pr != null && lk.manus.iptv.data.FilmResume.canResume(pr.positionMs, pr.durationMs, pr.watched) ? pr.positionMs : 0L);
                     return;
                 }
@@ -568,7 +643,8 @@ public final class Guide extends FrameLayout {
             @Override public void onVideoSize(int w, int hh) { fitMini(w, hh); }
             @Override public void onFail(String why, boolean decoderProblem) {
                 stopMini();
-                if (decoderProblem) blockMini(why);
+                if (miniPolicy.onFail(why, miniUrl) == lk.manus.iptv.player.MiniPolicy.BLOCK_TV) blockMini(why);
+                else Log.i(TAG, "mini: " + why + " - this channel shows its logo, the preview stays on");
             }
         });
         cName = Ui.tv(ctx, Ui.TITLE, Ui.PAPER, true);
@@ -658,6 +734,7 @@ public final class Guide extends FrameLayout {
             }
             @Override public void playFilm(lk.manus.iptv.data.Library.Item item, long startPosMs) {
                 oSec = null; // Back from a film started on a Details page goes to that page
+                detFrom = pageBehind();
                 host.playFilm(item, startPosMs);
             }
         });
@@ -679,6 +756,7 @@ public final class Guide extends FrameLayout {
             }
             @Override public void playFilm(lk.manus.iptv.data.Library.Item item, long startPosMs) {
                 oSec = null; // Back from a film started on a Details page goes to that page
+                detFrom = pageBehind();
                 host.playFilm(item, startPosMs);
             }
             @Override public void toast(String text) {
@@ -994,10 +1072,12 @@ public final class Guide extends FrameLayout {
                 boolean first = e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0;
                 if (k == KeyEvent.KEYCODE_DPAD_LEFT) { if (first) rail.requestFocus(); return true; }
                 if (k == KeyEvent.KEYCODE_DPAD_UP) { if (first) searchEt.requestFocus(); return true; }
-                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (first && !items.isEmpty()) list.requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (first) sfType.requestFocus(); return true; } // M3: the filter chips sit between the box and the results
                 return k == KeyEvent.KEYCODE_DPAD_RIGHT;
             }
         });
+        wireTools();
+        wireSf();
         rail.setOnFocusChangeListener(fl);
         list.setOnFocusChangeListener(fl);
         rail.setOnKeyListener(new OnKeyListener() {
@@ -1025,8 +1105,12 @@ public final class Guide extends FrameLayout {
         });
         list.setOnKeyListener(new OnKeyListener() {
             @Override public boolean onKey(View v, int k, KeyEvent e) {
-                if (k == KeyEvent.KEYCODE_DPAD_UP && phoneBtn.getVisibility() == VISIBLE && list.getSelectedItemPosition() <= 0) { // top of the search results: up to "Type on your phone"
-                    if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) phoneBtn.requestFocus();
+                if (k == KeyEvent.KEYCODE_DPAD_UP && phoneBtn.getVisibility() == VISIBLE && list.getSelectedItemPosition() <= 0) { // top of the search results: up to the filter chips (M3)
+                    if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) (sfLast != null && sfLast.getVisibility() == VISIBLE ? sfLast : sfType).requestFocus();
+                    return true;
+                }
+                if (k == KeyEvent.KEYCODE_DPAD_UP && tools.getVisibility() == VISIBLE && list.getSelectedItemPosition() <= 0) { // M2: top of a channel list: up to Sort / Filter
+                    if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) sortChip.requestFocus();
                     return true;
                 }
                 if (k != KeyEvent.KEYCODE_DPAD_LEFT && k != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
@@ -1037,6 +1121,305 @@ public final class Guide extends FrameLayout {
                 return true;
             }
         });
+    }
+
+    // ---- M2: sort / filter / jump ----
+
+    private TextView toolChip(Context c) {
+        TextView t = Ui.tv(c, Ui.CAPTION, Ui.PAPER, true);
+        t.setFocusable(true);
+        t.setPadding(Ui.u(14), Ui.u(7), Ui.u(14), Ui.u(7));
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_focused}, Ui.ring());
+        bg.addState(new int[]{}, Ui.chip());
+        t.setBackground(bg);
+        return t;
+    }
+
+    private void wireTools() {
+        sortChip.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { cycleSort(); } });
+        filterChip.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) {
+            if (filterQ.isEmpty()) openFilter(); else { clearFilter(); filterChip.requestFocus(); }
+        } });
+        sortChip.setOnKeyListener(new OnKeyListener() {
+            @Override public boolean onKey(View v, int k, KeyEvent e) {
+                boolean first = e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0;
+                if (k == KeyEvent.KEYCODE_DPAD_LEFT) { if (first) rail.requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_RIGHT) { if (first) (filterEt.getVisibility() == VISIBLE ? filterEt : filterChip).requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (first && !items.isEmpty()) list.requestFocus(); return true; }
+                return k == KeyEvent.KEYCODE_DPAD_UP;
+            }
+        });
+        filterChip.setOnKeyListener(new OnKeyListener() {
+            @Override public boolean onKey(View v, int k, KeyEvent e) {
+                boolean first = e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0;
+                if (k == KeyEvent.KEYCODE_DPAD_LEFT) { if (first) sortChip.requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (first && !items.isEmpty()) list.requestFocus(); return true; }
+                return k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_RIGHT;
+            }
+        });
+        final Runnable filterR = new Runnable() { @Override public void run() { applyFilter(filterEt.getText().toString()); } };
+        filterEt.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence q, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence q, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable ed) { if (filterEt.getVisibility() == VISIBLE) { h.removeCallbacks(filterR); h.postDelayed(filterR, 150); } }
+        });
+        filterEt.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override public boolean onEditorAction(TextView v, int a, KeyEvent e) {
+                hideIme();
+                h.removeCallbacks(filterR);
+                applyFilter(filterEt.getText().toString());
+                if (!items.isEmpty()) list.requestFocus();
+                return true;
+            }
+        });
+        filterEt.setOnKeyListener(new OnKeyListener() {
+            @Override public boolean onKey(View v, int k, KeyEvent e) {
+                boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+                if (k == KeyEvent.KEYCODE_DPAD_CENTER) {
+                    if (!down) { InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE); if (imm != null) imm.showSoftInput(v, 0); }
+                    return true;
+                }
+                if (k == KeyEvent.KEYCODE_DPAD_LEFT && filterEt.getSelectionStart() <= 0) { if (down && e.getRepeatCount() == 0) sortChip.requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (down) { hideIme(); if (!items.isEmpty()) list.requestFocus(); } return true; }
+                return k == KeyEvent.KEYCODE_DPAD_UP;
+            }
+        });
+        filterEt.setOnFocusChangeListener(new OnFocusChangeListener() {
+            @Override public void onFocusChange(View v, boolean f) {
+                if (f || filterEt.getVisibility() != VISIBLE) return;
+                hideIme();
+                filterEt.setVisibility(GONE); // the box folds back into the chip, which now shows the text (or plain "Filter")
+                filterChip.setVisibility(VISIBLE);
+                updateTools();
+            }
+        });
+    }
+
+    private void wireSf() {
+        final TextView[] chips = {sfType, sfCountry, sfCat, sfQuality, sfFav, sfClear};
+        OnKeyListener nav = new OnKeyListener() {
+            @Override public boolean onKey(View v, int k, KeyEvent e) {
+                boolean first = e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0;
+                if (k == KeyEvent.KEYCODE_DPAD_UP) { if (first) phoneBtn.requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (first && !items.isEmpty()) list.requestFocus(); return true; }
+                if (k != KeyEvent.KEYCODE_DPAD_LEFT && k != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
+                if (e.getAction() != KeyEvent.ACTION_DOWN) return true;
+                int i = java.util.Arrays.asList(chips).indexOf(v), j = i + (k == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1);
+                while (j >= 0 && j < chips.length && chips[j].getVisibility() != VISIBLE) j += k == KeyEvent.KEYCODE_DPAD_RIGHT ? 1 : -1;
+                if (j < 0) { if (e.getRepeatCount() == 0) rail.requestFocus(); }
+                else if (j < chips.length) chips[j].requestFocus();
+                return true;
+            }
+        };
+        OnFocusChangeListener rem = new OnFocusChangeListener() { @Override public void onFocusChange(View v, boolean f) { if (f) sfLast = v; } };
+        for (TextView t : chips) { t.setOnKeyListener(nav); t.setOnFocusChangeListener(rem); }
+        sfType.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { sfilter.type = lk.manus.iptv.data.SearchFilter.nextType(sfilter.type); sfChanged(); } });
+        sfQuality.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { sfilter.quality = lk.manus.iptv.data.SearchFilter.nextQuality(sfilter.quality); sfChanged(); } });
+        sfFav.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { sfilter.favOnly = !sfilter.favOnly; sfChanged(); } });
+        sfClear.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { sfilter.clear(); sfChanged(); sfType.requestFocus(); } });
+        sfCountry.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { pickSf(true); } });
+        sfCat.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { pickSf(false); } });
+    }
+
+    /** Country / category picker: only values that still give results with the other filters, most channels first. */
+    private void pickSf(final boolean countries) {
+        String q = searchEt.getText().toString();
+        List<Channel> base = q.trim().isEmpty() ? host.index().all : host.index().search(q, Integer.MAX_VALUE);
+        java.util.Map<String, Integer> opts = sfilter.options(base, new java.util.HashSet<>(host.store().favSet()), countries);
+        final List<String> keys = new ArrayList<>(opts.keySet());
+        List<String> labels = new ArrayList<>();
+        labels.add(countries ? "Any country" : "Any category");
+        String cur = countries ? sfilter.country : sfilter.category;
+        int sel = 0;
+        for (int i = 0; i < keys.size(); i++) {
+            String k = keys.get(i);
+            String f = countries ? Ui.flag(k) : "";
+            labels.add((f.isEmpty() ? "" : f + "  ") + (countries ? Ui.country(k) : k) + "  ·  " + nf.format(opts.get(k)));
+            if (k.equals(cur)) sel = i + 1;
+        }
+        host.openMenu(countries ? "Country" : "Category", labels, sel, new Host.Pick() {
+            @Override public void pick(int i) {
+                String v = i <= 0 || i > keys.size() ? "" : keys.get(i - 1);
+                if (countries) sfilter.country = v; else sfilter.category = v;
+                sfChanged();
+                (countries ? sfCountry : sfCat).requestFocus();
+            }
+        });
+    }
+
+    private void sfChanged() {
+        updateSf();
+        h.removeCallbacks(searchR);
+        runSearch();
+    }
+
+    /** Chip texts follow the filter; an active chip is drawn in PAPER, an idle one MUTED; Clear shows only when something is set. */
+    private void updateSf() {
+        lk.manus.iptv.data.SearchFilter f = sfilter;
+        sfType.setText("Type: " + lk.manus.iptv.data.SearchFilter.typeLabel(f.type));
+        sfCountry.setText(f.country.isEmpty() ? "Country: Any" : (Ui.flag(f.country).isEmpty() ? "" : Ui.flag(f.country) + "  ") + Ui.country(f.country));
+        sfCat.setText(f.category.isEmpty() ? "Category: Any" : f.category);
+        sfQuality.setText("Quality: " + lk.manus.iptv.data.SearchFilter.qualityLabel(f.quality) + (f.quality == lk.manus.iptv.data.SearchFilter.Q_ANY ? "" : "+"));
+        sfFav.setText(f.favOnly ? "★  Favourites only" : "☆  Favourites");
+        sfType.setTextColor(f.type != lk.manus.iptv.data.SearchFilter.TYPE_ALL ? Ui.PAPER : Ui.MUTED);
+        sfCountry.setTextColor(!f.country.isEmpty() ? Ui.PAPER : Ui.MUTED);
+        sfCat.setTextColor(!f.category.isEmpty() ? Ui.PAPER : Ui.MUTED);
+        sfQuality.setTextColor(f.quality != lk.manus.iptv.data.SearchFilter.Q_ANY ? Ui.PAPER : Ui.MUTED);
+        sfFav.setTextColor(f.favOnly ? Ui.GOLD : Ui.MUTED);
+        boolean act = f.active();
+        if (!act && sfClear.hasFocus()) sfType.requestFocus();
+        sfClear.setVisibility(act ? VISIBLE : GONE);
+    }
+
+    /** True for lists that are channel lists the user browses (not search results, folders, YouTube). */
+    private static boolean sortable(String id) { return id != null && !id.equals("search") && !id.startsWith("src:") && !id.equals("yt") && !id.equals("settings"); }
+
+    /** A browse list as shown: the index list in this list's sort, narrowed by the filter when it was typed on this list. */
+    private List<Channel> browse(String id) {
+        if (filterFor != null && !filterFor.equals(id)) resetFilter(); // another list: its filter does not follow
+        List<Channel> l = host.index().sorted(id, host.store());
+        return filterQ.isEmpty() ? l : lk.manus.iptv.data.ListTools.filter(l, filterQ);
+    }
+
+    private void resetFilter() {
+        filterQ = "";
+        filterFor = null;
+        if (filterEt.getVisibility() == VISIBLE) { filterEt.setVisibility(GONE); filterChip.setVisibility(VISIBLE); }
+        if (filterEt.getText().length() > 0) filterEt.setText("");
+    }
+
+    /** Rebuilds the list on screen (sort or filter changed), keeping the cursor on the same channel when it is still there. */
+    private void reshape() {
+        String id = memoKey();
+        if (chanList == null || !sortable(id)) return;
+        Channel keep = selected() != null ? selected() : listSel >= 0 && listSel < items.size() && items.get(listSel) instanceof Channel ? (Channel) items.get(listSel) : null;
+        chanList = browse(id);
+        items.clear();
+        items.addAll(chanList);
+        int at = keep == null ? 0 : chanList.indexOf(keep);
+        applyItems(Math.max(0, at));
+    }
+
+    private void cycleSort() {
+        String id = memoKey();
+        if (!sortable(id)) return;
+        int m = lk.manus.iptv.data.ListTools.next(host.store().sortMode(id));
+        host.store().setSortMode(id, m);
+        reshape();
+        updateTools();
+        sortChip.requestFocus();
+        if (m == lk.manus.iptv.data.ListTools.SORT_AZ) pill("A–Z: press 2 for A B C, 3 for D E F… on your remote");
+        else pill("Type a number on your remote to jump to that row");
+    }
+
+    private void openFilter() {
+        filterChip.setVisibility(GONE);
+        filterEt.setVisibility(VISIBLE);
+        filterEt.setText(filterQ);
+        filterEt.setSelection(filterEt.getText().length());
+        filterEt.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(filterEt, 0);
+    }
+
+    private void applyFilter(String q) {
+        String t = q == null ? "" : q.trim();
+        if (t.length() > 40) t = t.substring(0, 40);
+        if (t.equals(filterQ)) return;
+        filterQ = t;
+        filterFor = t.isEmpty() ? null : memoKey();
+        reshape();
+        updateTools();
+    }
+
+    private void clearFilter() {
+        boolean was = !filterQ.isEmpty();
+        resetFilter();
+        if (was) reshape();
+        updateTools();
+    }
+
+    /** Header row for the list on screen: shown over browse lists only; chip texts follow the list's sort and filter. */
+    private void updateTools() {
+        String id = memoKey();
+        boolean show = chanList != null && sortable(id) && (!items.isEmpty() || !filterQ.isEmpty() || filterEt.getVisibility() == VISIBLE);
+        tools.setVisibility(show ? VISIBLE : GONE);
+        if (!show) return;
+        sortChip.setText("Sort: " + lk.manus.iptv.data.ListTools.label(host.store().sortMode(id)));
+        filterChip.setText(filterQ.isEmpty() ? "Filter" : "Filter: “" + lk.manus.iptv.data.LoadText.name(filterQ) + "”  ✕");
+    }
+
+    private final Runnable jumpHideR = new Runnable() { @Override public void run() { jumpTv.setVisibility(GONE); } };
+    private final Runnable numGoR = new Runnable() { @Override public void run() { numJump(); } };
+
+    private void showJump(String t, long ms) {
+        jumpTv.setText(t);
+        jumpTv.setVisibility(VISIBLE);
+        h.removeCallbacks(jumpHideR);
+        h.postDelayed(jumpHideR, ms);
+    }
+
+    /** Names of the rows on screen (channels, countries / folders), for the letter jump. */
+    private List<String> rowNames(List<?> rows) {
+        List<String> out = new ArrayList<>(rows.size());
+        for (Object o : rows) out.add(o instanceof Channel ? ((Channel) o).name : o instanceof CC ? ((CC) o).name : o instanceof Rail ? (((Rail) o).selectable() ? ((Rail) o).label : null) : null);
+        return out;
+    }
+
+    /**
+     * M2: a number key while the guide is open. In an A–Z list (and in the categories / countries menu) it is a phone-keypad
+     * letter jump (2 = A, again = B…); in any other list it types the row number to jump to. False = not used here.
+     */
+    public boolean digit(int d) {
+        if (!open || rawKeys()) return false;
+        long now = SystemClock.uptimeMillis();
+        int press = d == lastDigit && now - digitAt < KEY_REPEAT_MS ? digitPress + 1 : 0;
+        lastDigit = d; digitPress = press; digitAt = now;
+        if (rail.hasFocus() && level == 2) { // categories / countries menu: always letters
+            lk.manus.iptv.data.ListTools.Jump j = lk.manus.iptv.data.ListTools.letter(rowNames(l2), d, press);
+            if (j.row < 0) { showJump(j.label.isEmpty() ? String.valueOf(d) : "No " + j.label, 900); return true; }
+            showJump(j.label, 900);
+            railTo(j.row);
+            return true;
+        }
+        if (!list.hasFocus() && !(tools.hasFocus() && !filterEt.hasFocus())) return false;
+        if (items.isEmpty()) return true;
+        String id = memoKey();
+        boolean letters = sortable(id) && chanList != null ? host.store().sortMode(id) == lk.manus.iptv.data.ListTools.SORT_AZ : !(items.get(0) instanceof Channel);
+        if (letters) {
+            numBuf = "";
+            lk.manus.iptv.data.ListTools.Jump j = lk.manus.iptv.data.ListTools.letter(rowNames(items), d, press);
+            if (j.row < 0) { showJump(j.label.isEmpty() ? String.valueOf(d) : "No " + j.label, 900); return true; }
+            showJump(j.label, 900);
+            jumpTo(j.row);
+            return true;
+        }
+        numBuf = (numBuf + d).replaceFirst("^0+(?=\\d)", "");
+        if (numBuf.length() > 5) numBuf = numBuf.substring(numBuf.length() - 5);
+        showJump(numBuf, NUM_WAIT_MS + 600);
+        h.removeCallbacks(numGoR);
+        long more = Long.parseLong(numBuf) * 10;
+        if (more > items.size()) numJump(); // no longer number fits this list: go now
+        else h.postDelayed(numGoR, NUM_WAIT_MS);
+        return true;
+    }
+
+    private void numJump() {
+        h.removeCallbacks(numGoR);
+        String n = numBuf;
+        numBuf = "";
+        int r = lk.manus.iptv.data.ListTools.row(n, items.size());
+        if (r < 0) { if (!n.isEmpty()) showJump("No " + n, 900); return; }
+        showJump(n, 700);
+        jumpTo(r);
+    }
+
+    private void jumpTo(int row) {
+        if (row < 0 || row >= items.size()) return;
+        if (!list.hasFocus()) list.requestFocus();
+        list.setSelectionFromTop(row, Ui.u(130));
+        listSel = row;
     }
 
     // ---- public API ----
@@ -1056,8 +1439,9 @@ public final class Guide extends FrameLayout {
         drill = null;
         String act = host.activeSection(), railId = act, kind = null, selId = null, drillId = null;
         if (!homeDone && hasHome) act = railId = "home"; // first open after the app starts
-        String back = oSec != null && oSec.equals(shownId) && (oUrl == null || oUrl.equals(liveUrl)) ? oSec : null; // Back from what that page started: the page as it was left
-        oSec = null; oUrl = null;
+        boolean sameVisit = oUrl == null || oUrl.equals(liveUrl) || (oZap != null && oZap.equals(act)); // zapping inside the list the tile tuned into keeps the way back
+        String back = oSec != null && oSec.equals(shownId) && sameVisit ? oSec : null; // Back from what that page started: the page as it was left
+        oSec = null; oUrl = null; oZap = null;
         if (back != null) act = railId = back;
         homeDone = true;
         if (act.startsWith("cc:")) { kind = "countries"; selId = act; }
@@ -1166,6 +1550,10 @@ public final class Guide extends FrameLayout {
             return;
         }
         if (phoneBtn.hasFocus()) { openPhone(); return; }
+        if (!numBuf.isEmpty()) { numJump(); return; } // M2: OK right after typing a row number goes there now
+        if (sortChip.hasFocus()) { cycleSort(); return; }
+        if (sfScroll.hasFocus()) { View f = sfScroll.findFocus(); if (f != null) f.performClick(); return; }
+        if (filterChip.hasFocus()) { filterChip.performClick(); return; }
         if (grid.getVisibility() == VISIBLE && grid.hasFocus()) { if (grid.focused() != null) openFilm(grid.focused()); return; }
         if (sgrid.getVisibility() == VISIBLE && sgrid.hasFocus()) { if (sgrid.focused() != null) openSeries(sgrid.focused()); return; }
         if (library.getVisibility() == VISIBLE && library.hasFocus()) { library.activate(); return; }
@@ -1188,17 +1576,17 @@ public final class Guide extends FrameLayout {
             return;
         }
         String id = drill != null ? drill : shownId;
-        String name = "search".equals(id) ? "Search: " + lastQuery : host.index().title(id);
+        String name = "search".equals(id) ? (lastQuery == null || lastQuery.trim().isEmpty() ? "Search: filtered" : "Search: " + lastQuery) : host.index().title(id);
         host.onCommit(id, name, chanList, listSel);
         hide();
     }
 
     /** OK on a poster: tune that channel (the Movies list, so Up / Down zap through the films) and close the guide. */
     private void openFilm(Films.Entry e) {
-        List<Channel> src = host.index().list("cat:Movies", host.store());
+        List<Channel> src = host.index().sorted("cat:Movies", host.store()); // M2: the order the guide shows, so row N is channel N
         int pos = e.pos < src.size() && src.get(e.pos) == e.ch ? e.pos : src.indexOf(e.ch);
         if (pos < 0) return;
-        markOrigin(e.ch.url);
+        markOrigin(e.ch.url, "cat:Movies");
         host.onCommit("cat:Movies", "Movies", src, pos);
         hide();
     }
@@ -1208,17 +1596,17 @@ public final class Guide extends FrameLayout {
         List<Channel> src = host.index().all; // the list Series on now was built from (the ranked "all" list can drop a channel)
         int pos = src.indexOf(e.ch);
         if (pos < 0) return;
-        markOrigin(e.ch.url);
+        markOrigin(e.ch.url, "all");
         host.onCommit("all", host.index().title("all"), src, pos);
         hide();
     }
 
     /** The same film on another channel (the "Also on" list): tune it in the Movies list. */
     private void openFilmCh(Channel ch) {
-        List<Channel> src = host.index().list("cat:Movies", host.store());
+        List<Channel> src = host.index().sorted("cat:Movies", host.store()); // M2: the order the guide shows, so row N is channel N
         int pos = src.indexOf(ch);
         if (pos < 0) return;
-        markOrigin(ch.url);
+        markOrigin(ch.url, "cat:Movies");
         host.onCommit("cat:Movies", "Movies", src, pos);
         hide();
     }
@@ -1227,7 +1615,7 @@ public final class Guide extends FrameLayout {
         List<Channel> src = host.index().all;
         int pos = src.indexOf(ch);
         if (pos < 0) return;
-        markOrigin(ch.url);
+        markOrigin(ch.url, "all");
         host.onCommit("all", host.index().title("all"), src, pos);
         hide();
     }
@@ -1341,8 +1729,9 @@ public final class Guide extends FrameLayout {
     }
 
     /** Playback starts from the page on screen: Back (or the guide key) reopens that page with the same tile lit. */
-    private void markOrigin(String url) {
+    private void markOrigin(String url, String zapId) {
         oUrl = url;
+        oZap = zapId;
         oSec = home.getVisibility() == VISIBLE ? "home" : grid.getVisibility() == VISIBLE ? "films" : sgrid.getVisibility() == VISIBLE ? "seriesnow" : null;
         if (oSec != null && !oSec.equals(shownId)) oSec = null;
     }
@@ -1358,6 +1747,28 @@ public final class Guide extends FrameLayout {
         else if ("seriesnow".equals(shownId)) { sgrid.setVisibility(VISIBLE); sgrid.focusTile(); }
         else if ("series".equals(shownId)) { seriesLibrary.setVisibility(VISIBLE); seriesLibrary.focusTile(); }
         else { library.setVisibility(VISIBLE); library.focusTile(); }
+    }
+
+    /** The library-style page on screen right now (behind a Details page): where its Back must return after a film. */
+    private String pageBehind() {
+        if (home.getVisibility() == VISIBLE) return "home";
+        if (library.getVisibility() == VISIBLE) return library.isSearchMode() ? "libsearch" : "lib";
+        if (seriesLibrary != null && seriesLibrary.getVisibility() == VISIBLE) return "series";
+        return null;
+    }
+
+    /** After hideNow(): makes the page recorded in detFrom visible again (content itself stays hidden until Details closes). Pages keep their list, scroll and tile while hidden. */
+    private void restoreBehind() {
+        String from = detFrom;
+        detFrom = null; // used once: playing again from this Details page records the (now visible) page afresh
+        if (from == null) from = "series".equals(shownId) ? "series" : "lib".equals(shownId) ? "lib" : hasHome ? "home" : "lib"; // e.g. a film reopened from a notification
+        col2.setVisibility(GONE);
+        searchEt.setVisibility(GONE);
+        phoneBtn.setVisibility(GONE);
+        sfScroll.setVisibility(GONE);
+        if ("home".equals(from)) { home.setVisibility(VISIBLE); home.tick(); }
+        else if ("series".equals(from) && seriesLibrary != null) seriesLibrary.setVisibility(VISIBLE);
+        else library.setVisibility(VISIBLE); // 'lib' and 'libsearch': the library keeps its search mode while hidden
     }
 
     public void reopenLibDetails(lk.manus.iptv.data.Library.Item item) {
@@ -1377,6 +1788,7 @@ public final class Guide extends FrameLayout {
             return;
         }
         hideNow(); // no stale list page behind the details page
+        restoreBehind(); // ...but the page it was opened from goes back underneath, so Back on Details lands on the tile, not on a channel list
         detailsOnly = false;
         open = true;
         hideCard();
@@ -1392,6 +1804,7 @@ public final class Guide extends FrameLayout {
     public void reopenSeriesDetails(lk.manus.iptv.data.Library.Item item) {
         if (item == null) return;
         hideNow(); // no stale list page behind the details page
+        restoreBehind(); // ...but the page it was opened from goes back underneath, so Back on Details lands on the tile, not on a channel list
         detailsOnly = false;
         open = true;
         hideCard();
@@ -1410,7 +1823,7 @@ public final class Guide extends FrameLayout {
     public void onRemindersChanged() { details.refresh(); home.tick(); }
 
     /** True while a dialog, the search box or Settings has focus: OK there keeps its own meaning even if a reminder pill shows. */
-    public boolean ownsOk() { return open && (dlg.getVisibility() == VISIBLE || searchEt.hasFocus() || (settings.getVisibility() == VISIBLE && settings.hasFocus())); }
+    public boolean ownsOk() { return open && (dlg.getVisibility() == VISIBLE || searchEt.hasFocus() || filterEt.hasFocus() || tools.hasFocus() || sfScroll.hasFocus() || (settings.getVisibility() == VISIBLE && settings.hasFocus())); }
 
     private void closeDetails() { details.hide(); which.hide(); closePhone(); content.setVisibility(VISIBLE); }
 
@@ -1458,7 +1871,7 @@ public final class Guide extends FrameLayout {
     }
 
     /** True while a text box or the settings screen has focus: the activity then hands every key to the views. */
-    public boolean rawKeys() { return open && (dlg.getVisibility() == VISIBLE || details.isUp() || (libDetails != null && libDetails.isUp()) || (seriesDetails != null && seriesDetails.isUp()) || which.isUp() || phone.isUp() || searchEt.hasFocus() || (settings.getVisibility() == VISIBLE && settings.hasFocus())); }
+    public boolean rawKeys() { return open && (dlg.getVisibility() == VISIBLE || details.isUp() || (libDetails != null && libDetails.isUp()) || (seriesDetails != null && seriesDetails.isUp()) || which.isUp() || phone.isUp() || searchEt.hasFocus() || filterEt.hasFocus() || (settings.getVisibility() == VISIBLE && settings.hasFocus())); }
 
     /** Back: dialog, keyboard, search text, settings page, folder, level 2, then close. Never leaves the app. */
     public void onBack() {
@@ -1497,6 +1910,9 @@ public final class Guide extends FrameLayout {
         }
         if (imeVisible()) { hideIme(); return; }
         if (searchEt.hasFocus() && searchEt.getText().length() > 0) { searchEt.setText(""); return; }
+        if (filterEt.hasFocus()) { if (filterEt.getText().length() > 0) filterEt.setText(""); else { clearFilter(); if (!items.isEmpty()) list.requestFocus(); else filterChip.requestFocus(); } return; } // M2: Back empties the filter box, then leaves it
+        if (!filterQ.isEmpty() && (list.hasFocus() || tools.hasFocus())) { clearFilter(); return; } // M2: Back on a filtered list shows the whole list again (cursor kept)
+        if (tools.hasFocus()) { if (!items.isEmpty()) list.requestFocus(); else rail.requestFocus(); return; }
         if (settings.getVisibility() == VISIBLE && settings.hasFocus()) { if (!settings.back()) rail.requestFocus(); return; }
         if (drill != null) { saveTop(); drill = null; shownId = null; showSection(rails.get(railSel)); return; }
         if (!rail.hasFocus()) { if (level == 2 || "search".equals(shownId) || "lib".equals(shownId) || "series".equals(shownId)) rail.requestFocus(); else dismiss(true); return; }
@@ -1654,7 +2070,7 @@ public final class Guide extends FrameLayout {
         if (!open) return;
         String id = drill != null ? drill : shownId;
         if (chanList != null && id != null && !"search".equals(id) && !id.startsWith("src:")) {
-            chanList = host.index().list(id, host.store());
+            chanList = browse(id);
             items.clear();
             items.addAll(chanList);
             applyItems(listSel);
@@ -1722,7 +2138,7 @@ public final class Guide extends FrameLayout {
         for (Rail r : l1) if (r.id.equals("fav")) r.count = host.index().list("fav", host.store()).size();
         railAd.notifyDataSetChanged();
         if ("fav".equals(shownId) && drill == null) {
-            chanList = host.index().list("fav", host.store());
+            chanList = browse("fav");
             items.clear();
             items.addAll(chanList);
             applyItems(Math.min(listSel, Math.max(0, items.size() - 1)));
@@ -1737,7 +2153,12 @@ public final class Guide extends FrameLayout {
         saveTop();
         Integer top = memoTop.get("fav");
         host.store().moveFav(c.url, how);
-        chanList = host.index().list("fav", host.store());
+        if (host.store().sortMode("fav") != lk.manus.iptv.data.ListTools.SORT_NUM || !filterQ.isEmpty()) { // moving only means something in your own order
+            host.store().setSortMode("fav", lk.manus.iptv.data.ListTools.SORT_NUM);
+            resetFilter();
+            pill("Favourites are back in your own order");
+        }
+        chanList = browse("fav");
         items.clear();
         items.addAll(chanList);
         nextTop = top;
@@ -1818,6 +2239,8 @@ public final class Guide extends FrameLayout {
         boolean isSettings = r.id.equals("settings"), isSearch = r.id.equals("search");
         searchEt.setVisibility(isSearch ? VISIBLE : GONE);
         phoneBtn.setVisibility(isSearch ? VISIBLE : GONE);
+        sfScroll.setVisibility(isSearch ? VISIBLE : GONE);
+        if (isSearch) updateSf();
         settings.setVisibility(GONE);
         boolean isFilms = r.id.equals("films"), isHome = r.id.equals("home") || r.id.equals("mylist"), isLib = r.id.equals("lib"), isSeries = r.id.equals("series"), isSN = r.id.equals("seriesnow");
         col2.setVisibility(isSettings || isFilms || isHome || isLib || isSeries || isSN ? GONE : VISIBLE);
@@ -1890,7 +2313,7 @@ public final class Guide extends FrameLayout {
             chanList = lastResults;
         }
         else {
-            chanList = host.index().list(r.id, host.store());
+            chanList = browse(r.id);
             items.addAll(chanList);
         }
         applyItems(restore(r.id));
@@ -1945,7 +2368,7 @@ public final class Guide extends FrameLayout {
         memo.put(shownId, listSel);
         saveTop();
         drill = id;
-        chanList = host.index().list(id, host.store());
+        chanList = browse(id);
         items.clear();
         items.addAll(chanList);
         applyItems(restore(id));
@@ -1958,13 +2381,24 @@ public final class Guide extends FrameLayout {
         final String q = searchEt.getText().toString();
         final Index ix = host.index();
         final int seq = ++searchSeq;
+        final lk.manus.iptv.data.SearchFilter sf = sfilter.copy(); // M3: the filters as they are now, read off the UI thread
+        final java.util.Set<String> favs = new java.util.HashSet<>(host.store().favSet());
         new Thread(new Runnable() {
             @Override public void run() {
                 long t = SystemClock.elapsedRealtime();
-                final List<Channel> r = ix.search(q);
-                boolean anyLib = !Config.PLAY && (lk.manus.iptv.data.Library.any(Db.get()) || lk.manus.iptv.data.Library.any(Db.get(), "series"));
-                final List<lk.manus.iptv.data.Library.Item> libMatches = (anyLib && !q.trim().isEmpty())
-                        ? lk.manus.iptv.data.Library.search(Db.get(), q, 100) : null;
+                boolean noWords = q.trim().isEmpty();
+                // no words + a filter = browse every channel by filter (no keyboard needed); words = all matches, narrowed, then capped
+                List<Channel> base = noWords ? (sf.active() ? ix.all : new ArrayList<Channel>()) : sf.active() ? ix.search(q, Integer.MAX_VALUE) : ix.search(q);
+                final List<Channel> r = sf.apply(base, favs, lk.manus.iptv.data.Search.MAX);
+                boolean anyLib = !Config.PLAY && sf.type != lk.manus.iptv.data.SearchFilter.TYPE_LIVE && !sf.favOnly
+                        && (lk.manus.iptv.data.Library.any(Db.get()) || lk.manus.iptv.data.Library.any(Db.get(), "series"));
+                List<lk.manus.iptv.data.Library.Item> lm = (anyLib && !noWords) ? lk.manus.iptv.data.Library.search(Db.get(), q, 100) : null;
+                if (lm != null && (sf.type == lk.manus.iptv.data.SearchFilter.TYPE_FILMS || sf.type == lk.manus.iptv.data.SearchFilter.TYPE_SERIES)) {
+                    List<lk.manus.iptv.data.Library.Item> keep = new ArrayList<>();
+                    for (lk.manus.iptv.data.Library.Item it : lm) if ("series".equals(it.kind) == (sf.type == lk.manus.iptv.data.SearchFilter.TYPE_SERIES)) keep.add(it);
+                    lm = keep;
+                }
+                final List<lk.manus.iptv.data.Library.Item> libMatches = lm;
                 Log.i(TAG, "search \"" + q.length() + " chars\" -> " + r.size() + " results in " + (SystemClock.elapsedRealtime() - t) + " ms");
                 h.post(new Runnable() {
                     @Override public void run() {
@@ -2006,11 +2440,15 @@ public final class Guide extends FrameLayout {
             if (navHint) e = "Press OK or ›\nto open";
             else if (shownId.equals("fav")) e = "★\n\nLong-press OK on any channel to add it here";
             else if (shownId.equals("recent")) e = "Channels you watch will show up here";
-            else if (isSearch) e = searchEt.getText().length() == 0 ? "Press OK to open the keyboard\nor use the mic on your remote" : "No channels match";
+            else if (isSearch) e = sfilter.active() ? "No channels match these filters\n\nChange a filter, or Clear filters" : searchEt.getText().length() == 0 ? "Press OK to open the keyboard\nor use the mic on your remote\n\nor pick a filter above, no typing needed" : "No channels match";
             else e = host.index().all.isEmpty() ? "No channels yet \u2014 add a playlist in Settings \u2192 Sources" : "No channels";
         }
         empty.setText(e);
         empty.setVisibility(items.isEmpty() ? VISIBLE : GONE);
+        empty.post(new Runnable() { @Override public void run() { // centred in the space under the headers (search box, filter chips, Sort / Filter), never over them
+            int t = list.getTop();
+            if (empty.getPaddingTop() != t) empty.setPadding(Ui.u(40), t, Ui.u(40), 0);
+        } });
         listSel = Math.max(0, Math.min(pos, items.size() - 1));
         listAd.notifyDataSetChanged();
         list.setSelectionFromTop(listSel, nextTop != null ? nextTop : Ui.u(130));
@@ -2018,6 +2456,8 @@ public final class Guide extends FrameLayout {
         h.removeCallbacks(cardR); h.removeCallbacks(liveR); stopMini();
         hideCard();
         if (list.hasFocus()) dwell();
+        if (!filterQ.isEmpty() && items.isEmpty() && chanList != null) { empty.setText("No channel here matches “" + lk.manus.iptv.data.LoadText.name(filterQ) + "”\n\nOK on Filter clears it"); empty.setVisibility(VISIBLE); }
+        updateTools();
     }
 
     private void selectList(int pos) { listSel = pos; list.setSelectionFromTop(pos, Ui.u(130)); }
@@ -2054,15 +2494,26 @@ public final class Guide extends FrameLayout {
     /** The mini window is on for this TV right now (Settings shows it). */
     public static String miniState(Context c, Store st) {
         if (!st.miniAuto()) return "Off";
-        if (!st.miniBlocked().isEmpty()) return "Auto (off: " + st.miniBlocked() + ")";
+        if (!st.miniBlocked().isEmpty()) return "Auto (off: " + (st.miniBlocked().startsWith("ERROR_CODE") || st.miniBlocked().startsWith("software") || st.miniBlocked().startsWith("main video") ? miniReason(st.miniBlocked()) : st.miniBlocked()) + ")"; // older installs stored the raw code
         int n = MiniPreview.avcInstances();
         return n >= 2 ? "Auto (on)" : "Auto (off: this TV has one video decoder)";
     }
 
     private void blockMini(String why) {
         Log.i(TAG, "mini: off for this TV - " + why);
-        host.store().setMiniBlocked(why.length() > 60 ? why.substring(0, 60) : why);
+        miniPolicy.reset(); // counting starts again if the viewer switches it back on
+        host.store().setMiniBlocked(miniReason(why));
         host.pill("Mini preview turned off for this TV");
+    }
+
+    /** What Settings shows after "Auto (off: …)": plain words, never a Media3 error code. */
+    static String miniReason(String why) {
+        String w = why == null ? "" : why;
+        if (w.startsWith("software decoder")) return "this TV plays a second video only in software";
+        if (w.startsWith("ERROR_CODE_DECODER")) return "this TV could not start a second video";
+        if (w.startsWith("ERROR_CODE_DECODING")) return "several channels could not play in the preview";
+        if (w.startsWith("main video dropped")) return "the main picture stuttered during previews";
+        return w.length() > 60 ? w.substring(0, 60) : w;
     }
 
     private void fitMini(int vw, int vh) {

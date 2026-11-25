@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import lk.manus.iptv.player.Engine;
 import lk.manus.iptv.player.SubPref;
+import lk.manus.iptv.ui.Ui;
 
 /** Subtitle and audio tracks, the caption line and English translation. */
 final class Subs {
@@ -25,6 +26,21 @@ final class Subs {
     private String trSrc = "";
     private String detCand = "";
     private int detAgree;
+    private String filmKey; // film mode: choices are remembered per film ("film:<id>") in the database, not per channel; null = live TV
+
+    /** Film mode on (key "film:<id>") or off (null). FilmPlayer sets it before a film starts and clears it when the film stops. */
+    void filmMode(String key) { filmKey = key; }
+
+    boolean hasSubs() { return !subs.isEmpty(); }
+
+    /** What the subtitle line says now: "Off" or the chosen track's name (the film bar's hint). */
+    String currentLabel() { return subSel < 0 || subSel >= subs.size() ? "Off" : subName(subSel); }
+
+    /** The remembered choice for what is playing: "" none, "-" Off, else a track key. */
+    private String savedSub() {
+        if (filmKey != null) { lk.manus.iptv.data.Db db = lk.manus.iptv.data.Db.get(); return db == null ? "" : db.choice("subs", filmKey); }
+        return ps.playCh == null ? "" : ps.store.subChoice(ps.playCh.url);
+    }
 
     final Runnable rescanR = new Runnable() { @Override public void run() { if (ps.playing && subs.isEmpty()) scanTracks(); } };
 
@@ -53,7 +69,7 @@ final class Subs {
         for (Engine.Track x : subs) log.append(' ').append(x.mime).append('/').append(x.lang);
         if (!subs.isEmpty() || !ps.h.hasCallbacks(rescanR)) Log.i(TAG, "subtitle tracks:" + (subs.isEmpty() ? " none" : log));
         ps.audios = e.audioTracks();
-        if (ps.audios.size() > 1 && !audioRestored && ps.previewCh == null && ps.playCh != null) {
+        if (ps.audios.size() > 1 && !audioRestored && ps.previewCh == null && ps.playCh != null && filmKey == null) { // films restore their own audio (FilmPlayer)
             audioRestored = true;
             String key = ps.store.audioChoice(ps.playCh.url);
             for (int i = 0; i < ps.audios.size() && !key.isEmpty(); i++) if (audioKey(i).equals(key)) { if (!ps.audios.get(i).sel) e.selectAudio(ps.audios.get(i).id); break; }
@@ -63,9 +79,9 @@ final class Subs {
         for (Engine.Track x : subs) if (!x.mime.contains("cea-") || !x.lang.isEmpty() && !x.lang.equals("und")) real = true;
         ps.bCC.setVisibility(real ? View.VISIBLE : View.GONE);
         ps.guide.setCC(real);
-        if (any && !subRestored && ps.previewCh == null && ps.playCh != null) {
+        if (any && !subRestored && ps.previewCh == null && (ps.playCh != null || filmKey != null)) {
             subRestored = true;
-            String key = ps.store.subChoice(ps.playCh.url);
+            String key = savedSub();
             if (ps.dbgSub >= 0 && ps.dbgSub < subs.size()) selectSub(ps.dbgSub, false);
             else if (!key.isEmpty()) { for (int i = 0; i < subs.size(); i++) if (subKey(i).equals(key)) { selectSub(i, false); break; } }
             else if (ps.store.subsDefault()) selectSub(SubPref.pick(subs), false);
@@ -118,7 +134,8 @@ final class Subs {
         startTranslation(si);
         ps.subTv.setVisibility(View.GONE);
         Log.i(TAG, "subtitles " + (si < 0 ? "off" : "on " + subs.get(si).mime + "/" + subs.get(si).lang));
-        if (persist && ps.playCh != null) ps.store.setSubChoice(ps.playCh.url, si < 0 ? "-" : subKey(si)); // "-" = the user chose Off here
+        if (persist && filmKey != null) { lk.manus.iptv.data.Db db = lk.manus.iptv.data.Db.get(); if (db != null) db.setChoice("subs", filmKey, si < 0 ? "-" : subKey(si), 200); } // films: per film
+        else if (persist && ps.playCh != null) ps.store.setSubChoice(ps.playCh.url, si < 0 ? "-" : subKey(si)); // "-" = the user chose Off here
     }
 
     /** T40: decides whether track si needs translating and, if so, gets the model going. Never runs with subtitles Off or in the mini preview. */
@@ -183,8 +200,18 @@ final class Subs {
     /** The engine's current cue, shown bottom-centre unless something else owns the screen. */
     void showCue() {
         if (subSel < 0 || ps.curCue.isEmpty() || !ps.playing || ps.guide.isOpen() || ps.previewCh != null) { ps.subTv.setVisibility(View.GONE); return; }
-        String shown = ps.trCue.isEmpty() ? ps.curCue : ps.trCue;
-        if (!shown.contentEquals(ps.subTv.getText())) ps.subTv.setText(shown);
+        String shown = lk.manus.iptv.player.SubFit.clean(ps.trCue.isEmpty() ? ps.curCue : ps.trCue);
+        if (shown.isEmpty()) { ps.subTv.setVisibility(View.GONE); return; } // a cue of only spaces/blank lines
+        if (!shown.contentEquals(ps.subTv.getText())) {
+            // size first, then text: the cue must fit SubFit.BUDGET lines at the box's max width, shrinking in steps, never cut
+            float base = Ui.px(Ui.BODY);
+            ps.subTv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, base);
+            float avg = ps.subTv.getPaint().measureText("the quick brown fox jumps over a lazy dog") / 41f;
+            int boxW = ps.subTv.getMaxWidth() - ps.subTv.getPaddingLeft() - ps.subTv.getPaddingRight();
+            float sc = avg > 0 && boxW > 0 ? lk.manus.iptv.player.SubFit.scale(shown, boxW / avg) : 1f;
+            if (sc != 1f) ps.subTv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, base * sc);
+            ps.subTv.setText(shown);
+        }
         ps.subTv.setAlpha(ps.trOn && ps.trCue.isEmpty() && !trSrc.equals("en") ? 0.55f : 1f); // the original shows faintly until its English is ready
         ps.subTv.setVisibility(View.VISIBLE);
         if (!shownAny) { shownAny = true; ps.bCC.setVisibility(View.VISIBLE); ps.guide.setCC(true); }
@@ -192,7 +219,7 @@ final class Subs {
 
     void openSubMenu() {
         if (ps.list == null || !ps.playing) return;
-        if (subs.isEmpty()) { ps.ui.showToast("No subtitles on this channel", 2000); return; }
+        if (subs.isEmpty()) { ps.ui.showToast(filmKey != null ? "No subtitles in this film" : "No subtitles on this channel", 2000); return; }
         List<String> l = new ArrayList<>();
         l.add("Off");
         for (int i = 0; i < subs.size(); i++) l.add(subLabel(i));
@@ -206,7 +233,8 @@ final class Subs {
         ps.menus.openMenu("Audio", l, sel, new Chooser.MenuPick() { @Override public void pick(int i) {
             Engine e = ps.eng;
             if (e == null || i >= ps.audios.size() || !e.selectAudio(ps.audios.get(i).id)) return;
-            if (ps.playCh != null) ps.store.setAudioChoice(ps.playCh.url, audioKey(i));
+            if (filmKey != null) { lk.manus.iptv.data.Db db = lk.manus.iptv.data.Db.get(); Engine.Track t = ps.audios.get(i); if (db != null) db.setChoice("audio", filmKey, !t.label.isEmpty() ? t.label : !t.lang.isEmpty() ? t.lang : String.valueOf(t.id), 200); } // FilmPlayer.applySavedTracks reads this
+            else if (ps.playCh != null) ps.store.setAudioChoice(ps.playCh.url, audioKey(i));
             Log.i(TAG, "audio " + ps.audios.get(i).lang);
             ps.h.postDelayed(new Runnable() { @Override public void run() { scanTracks(); } }, 500); // refresh the selected flags
         } });

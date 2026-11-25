@@ -79,7 +79,7 @@ public class PlayerActivity extends Activity {
         ps.prober.setListener(new Prober.Listener() { @Override public void onProbed(String url, boolean ok) { if (ps.idx != null) ps.idx.markDirty(); } });
         ps.ui.buildUi();
         ps.sources = new Sources(ps.prefs, getFilesDir(), Config.DEBUG ? in.getStringExtra("src") : null); // "src" extra: DEBUG-only test hook for the built-in source
-        ps.message.setText(""); // T105b: the logo screen (ps.boot) carries "Loading…"
+        ps.message.setText(""); // T105b: the logo screen (ps.boot) carries the LoadingLine
         load();
     }
 
@@ -90,6 +90,7 @@ public class PlayerActivity extends Activity {
                 final List<Channel> a = ld.merged;
                 ps.all = a;
                 if (ps.spike > 0) { if (ps.spikeIdx == null) ps.host.startSpike(); return; }
+                if (ps.bootLine != null) ps.bootLine.set(lk.manus.iptv.data.LoadText.sorting(a.size()));
                 new Thread(new Runnable() {
                     @Override public void run() {
                         long t = SystemClock.elapsedRealtime();
@@ -101,6 +102,7 @@ public class PlayerActivity extends Activity {
                     }
                 }, "index").start();
             }
+            @Override public void onStage(String text) { if (ps.bootLine != null) ps.bootLine.set(text); }
             @Override public void onError() {
                 if (isFinishing() || ps.list != null) return;
                 hideBoot();
@@ -112,7 +114,7 @@ public class PlayerActivity extends Activity {
         });
     }
 
-    private void hideBoot() { if (ps.boot != null) { ps.boot.setVisibility(View.GONE); ps.boot = null; } }
+    private void hideBoot() { if (ps.boot != null) { ps.boot.setVisibility(View.GONE); ps.boot = null; ps.bootLine = null; } }
 
     private void applyIndex(Index ix) {
         hideBoot();
@@ -131,7 +133,7 @@ public class PlayerActivity extends Activity {
         ps.guide.onIndexChanged();
         ps.remind.arm();
         String sec = Config.DEBUG && getIntent().hasExtra("sec") && ps.list == null ? getIntent().getStringExtra("sec") : ps.store.section(); // DEBUG: open on this section without saving it
-        List<Channel> nl = ix.list(sec, ps.store);
+        List<Channel> nl = ix.sorted(sec, ps.store); // M2: the list's chosen order, as the guide shows it
         if (nl.isEmpty()) { sec = "foryou"; nl = ix.forYou; }
         if (nl.isEmpty()) {
             if (ps.filmPlayer == null || !ps.filmPlayer.isActive()) ps.message.setVisibility(View.VISIBLE);

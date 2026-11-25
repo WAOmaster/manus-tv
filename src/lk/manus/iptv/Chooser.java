@@ -125,7 +125,7 @@ final class Chooser {
 
     /** T95: fetches the channel's earlier programmes off the UI thread, then lists them (OK plays one in the film player). */
     private void openEarlier(final Channel c) {
-        ps.ui.showToast("Loading…", 1500);
+        ps.ui.showToast(lk.manus.iptv.data.LoadText.earlier(c.name), 4000); // replaced by the list (or "No earlier programmes") when it arrives
         new Thread(new Runnable() { @Override public void run() {
             final List<Catchup.Prog> ps0 = LiveSource.earlier(Db.get(), c.xtItem, c.archiveDays, System.currentTimeMillis() / 1000);
             ps.h.post(new Runnable() { @Override public void run() {
@@ -182,7 +182,7 @@ final class Chooser {
         ps.gen++;
         ps.h.removeCallbacks(ps.fov.skipR); ps.h.removeCallbacks(ps.fov.altR); ps.h.removeCallbacks(ps.fov.watchdog); ps.h.removeCallbacks(ps.fov.reconnectR);
         ps.reconnecting = false;
-        ps.ui.setState("Loading…");
+        ps.ui.setState(lk.manus.iptv.data.LoadText.tuning());
         ps.h.removeCallbacks(ps.host.startR);
         ps.h.post(ps.host.startR);
         ps.ui.showBanner();

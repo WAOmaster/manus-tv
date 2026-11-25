@@ -114,7 +114,7 @@ final class EngineHost implements SurfaceHolder.Callback {
             Log.i(TAG, "mirror mode " + (want ? "on" : "off"));
         }
         Log.i(TAG, "start #" + (ps.index + 1) + " " + c.name + " " + Redact.host(c.url) + (keep ? " (retry)" : ""));
-        if (ps.spike == 0 && !ps.guide.isOpen() && !keep) { ps.ui.setState("Loading…"); ps.ui.showBanner(); }
+        if (ps.spike == 0 && !ps.guide.isOpen() && !keep) { ps.ui.setState(lk.manus.iptv.data.LoadText.tuning()); ps.ui.showBanner(); }
         ps.h.postDelayed(ps.fov.watchdog, ps.spike > 0 ? SPIKE_TIMEOUT_MS : TIMEOUT_MS);
         if (!keep && ps.spike == 0) ps.h.postDelayed(ps.ui.connR, 1500);
         final Engine old = ps.eng;
@@ -262,6 +262,8 @@ final class EngineHost implements SurfaceHolder.Callback {
             ps.h.postDelayed(new Runnable() { @Override public void run() { if (g == ps.gen) onBufferEnd(); } }, 13000);
         }
         Log.i(TAG, "playing after " + (SystemClock.elapsedRealtime() - ps.t0) + " ms");
+        ps.ui.shutter(false);
+        if (ps.ui.toastShows(Failover.NOT_PLAYING)) ps.ui.clearToast(); // an earlier channel's failure message never rides on a picture that plays
         if (ps.spike > 0) { spikeRecord("ok", ""); return; }
         if (ps.previewCh == null) {
             ps.prefs.edit().putString("last", ps.list.get(ps.index).url).apply();
@@ -280,7 +282,7 @@ final class EngineHost implements SurfaceHolder.Callback {
     }
 
     private void onBufferStart() {
-        if (!ps.playing) return; // start-up buffering is covered by "Loading…"
+        if (!ps.playing) return; // start-up buffering is covered by "Tuning in…"
         ps.buffering = true;
         ps.prober.setPaused(true);
         recordStall();

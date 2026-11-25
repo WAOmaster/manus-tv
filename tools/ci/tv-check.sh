@@ -54,12 +54,15 @@ k $DOWN $OK; sleep 2; shot M3-country-chosen
 k $RIGHT $RIGHT $OK; sleep 2; shot M3-quality-HD
 k $LEFT $LEFT $LEFT $OK; sleep 2; shot M3-type-films
 
-echo "== M1: film from the library, opening message, subtitles, Back twice"
+echo "== M1 + film subtitles: film from the library, opening message, subtitles on by default, the subtitle menu, Back twice"
 open lib 5; shot M1b-library
 k $OK; sleep 2; shot M1b-details
 k $OK; sleep 0.4; shot M1c-film-opening
 sleep 5; shot M1a-film-subtitle-long
 sleep 4; shot M1a-film-subtitle-long-2
+k $DOWN; sleep 0.8; shot FS-film-bar-subtitle-hint # film subtitles: the bar says "▼ Subtitles: English"
+k $DOWN; sleep 1; shot FS-film-subtitle-menu # Down again opens Off / English
+k $BACK; sleep 1
 k $BACK; sleep 2; shot M1b-back1-details
 k $BACK; sleep 2; shot M1b-back2-library-not-channels
 

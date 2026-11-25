@@ -30,7 +30,7 @@ jobs:
         run: ANDROID_SDK=$ANDROID_HOME DEBUG=1 FLAVOR=full DEFAULT_IPTVORG=1 NATIVE=0 bash build.sh
       - name: Link check (ffprobe from the runner)
         run: |
-          sudo apt-get install -y -qq ffmpeg > /dev/null
+          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg > /dev/null # a stale package list 404s on superseded security updates
           mkdir -p shots
           python3 tools/ci/source-probe.py "$(cat tools/ci/source-url.txt)" shots/probe.md 60 "UK,News" | tee shots/probe-summary.txt
       - name: Enable KVM

@@ -32,7 +32,7 @@ jobs:
         run: ANDROID_SDK=$ANDROID_HOME DEBUG=1 FLAVOR=full DEFAULT_IPTVORG=1 NATIVE=0 bash build.sh
       - name: Test media, playlist and mock servers
         run: |
-          sudo apt-get install -y -qq ffmpeg > /dev/null
+          sudo apt-get update -qq > /dev/null && sudo apt-get install -y -qq ffmpeg > /dev/null # a stale package list 404s on superseded security updates
           mkdir -p "$RUNNER_TEMP/www" "$RUNNER_TEMP/posters"
           bash tools/ci/make-media.sh "$RUNNER_TEMP/media" "$RUNNER_TEMP/www"
           python3 tools/ci/playlist.py "$RUNNER_TEMP/www/playlist.m3u"

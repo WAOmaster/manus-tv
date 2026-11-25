@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Loads one real playlist (tools/ci/source-url.txt) as the app's only source on the emulator and records what a viewer sees:
 # channel count, Countries, News, a UK search, then 10 channel flips with a screenshot each and whether each one played.
+# Failed flips must show black (the shutter), never the previous channel's frozen picture under the new name.
 # Usage: source-check.sh <shots-dir> <playlist url>
 set -u
 SHOTS=${1:?shots dir}; URL=${2:?playlist url}; mkdir -p "$SHOTS"

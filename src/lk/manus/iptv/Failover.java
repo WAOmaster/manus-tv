@@ -114,7 +114,7 @@ final class Failover {
         ps.altFor = null;
         if (!autoSkip()) { // every link failed: say so and stay until the viewer zaps (OK tries again)
             ps.gaveUp = true;
-            ps.ui.setState(""); // no "Loading…" under the message
+            ps.ui.setState(""); // no "Tuning in…" under the message
             ps.ui.showToast(NOT_PLAYING, 0);
             return;
         }
@@ -149,7 +149,7 @@ final class Failover {
     boolean autoSkip() { return ps.dbgAutoSkip != null ? ps.dbgAutoSkip : ps.store.autoSkip(); }
 
     private void showFail(final Channel rep, List<Channel> alts) {
-        ps.h.removeCallbacks(ps.ui.hideBanner); // one thing at a time: no "Loading…" banner or pill under the card
+        ps.h.removeCallbacks(ps.ui.hideBanner); // one thing at a time: no "Tuning in…" banner or pill under the card
         ps.banner.animate().cancel();
         ps.banner.setVisibility(View.GONE);
         ps.ui.setState("");

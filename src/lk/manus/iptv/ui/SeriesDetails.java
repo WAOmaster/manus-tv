@@ -334,7 +334,7 @@ public final class SeriesDetails extends FrameLayout {
 
         isLoading = true;
         isFailed = false;
-        statusTv.setText("Loading…");
+        statusTv.setText("Getting the episode list…");
         statusTv.setVisibility(VISIBLE);
         seasonScroll.setVisibility(GONE);
         episodeScroll.setVisibility(GONE);

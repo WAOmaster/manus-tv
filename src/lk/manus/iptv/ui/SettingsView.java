@@ -778,7 +778,7 @@ public final class SettingsView extends FrameLayout {
     private void trModelsPage() {
         head("Downloaded languages", "Subtitle translation models stored on this TV (about 30 MB each)");
         if (trModels == null) {
-            note("Loading…");
+            note("Checking downloaded languages…");
             lk.manus.iptv.subs.SubTranslator.downloaded(getContext(), new lk.manus.iptv.subs.SubTranslator.ListCb() {
                 @Override public void done(List<String> l) { trModels = l == null ? new ArrayList<String>() : l; if (page.equals("trmodels")) render(); }
             });

@@ -361,6 +361,8 @@ final class FilmPlayer {
         ps.playing = false;
 
         hideAudioFail();
+        ps.ui.showToastNow(lk.manus.iptv.data.LoadText.film(item.title, startPos, isCatchup), 30000); // the screen was blank until the picture came: say what is opening
+        openingUp = true;
 
         final int g = ++ps.gen;
         final Engine.Listener ls = new Engine.Listener() {
@@ -374,6 +376,7 @@ final class FilmPlayer {
                 if ("ended".equalsIgnoreCase(detail)) {
                     onFilmEnded();
                 } else {
+                    clearOpening(); // no "Opening…" pill left over a failed start
                     Log.i(TAG, "film playback error: " + detail);
                 }
             }
@@ -437,6 +440,7 @@ final class FilmPlayer {
 
     private void onPlaying() {
         ps.playing = true;
+        clearOpening();
         ps.guide.hideNow();
         filmTitleTv.setText(currentFilm.title);
         showBar(4000);
@@ -623,8 +627,13 @@ final class FilmPlayer {
         }
     }
 
+    private boolean openingUp; // the "Opening X…" pill from start() is still up
+
+    private void clearOpening() { if (openingUp) { openingUp = false; ps.ui.clearToast(); } }
+
     void stop(boolean returnToDetails) {
         if (!active) return;
+        clearOpening();
         saveProgress(true); // synchronous save so Details can immediately read the updated state
 
         active = false;
@@ -667,6 +676,7 @@ final class FilmPlayer {
     }
 
     void showAudioFail() {
+        clearOpening();
         audioCardUp = true;
         hideBar();
         if (audioCard != null) {

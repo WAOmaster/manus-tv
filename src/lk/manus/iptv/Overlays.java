@@ -27,6 +27,7 @@ import lk.manus.iptv.ui.Guide;
 import lk.manus.iptv.ui.NowBar;
 import lk.manus.iptv.ui.Modal;
 import lk.manus.iptv.ui.Ring;
+import lk.manus.iptv.ui.LoadingLine;
 import lk.manus.iptv.ui.LogoLoader;
 import lk.manus.iptv.ui.Ui;
 import lk.manus.iptv.data.Sources;
@@ -137,7 +138,7 @@ final class Overlays {
         ps.message.setGravity(Gravity.CENTER);
         root.addView(ps.message, new FrameLayout.LayoutParams(-1, -1));
 
-        // T105b: cold-start screen = splash look (logo + name + quiet Loading…); removed by PlayerActivity.hideBoot() once channels or an error arrive
+        // T105b: cold-start screen = splash look (logo + name + a LoadingLine naming each start-up step); removed by PlayerActivity.hideBoot() once channels or an error arrive
         FrameLayout boot = new FrameLayout(ps.act);
         boot.setBackgroundColor(Ui.INK);
         ImageView bootLogo = new ImageView(ps.act);
@@ -150,9 +151,12 @@ final class Overlays {
         TextView bn = Ui.tv(ps.act, Ui.TITLE, Ui.PAPER, true);
         bn.setText("MANUS TV");
         bt.addView(bn);
-        TextView bw = Ui.tv(ps.act, Ui.BODY, Ui.MUTED, false);
-        bw.setText("Loading…");
-        bt.addView(bw);
+        LoadingLine bw = new LoadingLine(ps.act, Ui.u(220)); // names each step (reading / downloading / sorting), Signal hairline sweeping under it
+        bw.set(lk.manus.iptv.data.LoadText.reading(1));
+        LinearLayout.LayoutParams bwp = new LinearLayout.LayoutParams(-2, -2);
+        bwp.topMargin = Ui.u(10);
+        bt.addView(bw, bwp);
+        ps.bootLine = bw;
         FrameLayout.LayoutParams tp = new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER_HORIZONTAL | Gravity.CENTER_VERTICAL);
         tp.topMargin = bs / 2 + Ui.u(40); // just under the logo
         boot.addView(bt, tp);
@@ -283,7 +287,10 @@ final class Overlays {
         // subtitle line: shares the bottom column with the banner, so it always sits above it (UX-SPEC 4)
         ps.subTv = Ui.tv(ps.act, Ui.BODY, Ui.PAPER, false);
         ps.subTv.setSingleLine(false);
-        ps.subTv.setMaxLines(3);
+        ps.subTv.setEllipsize(null); // never "…": a long cue shrinks instead (Subs.showCue + SubFit)
+        ps.subTv.setMaxLines(Integer.MAX_VALUE);
+        ps.subTv.setLineSpacing(0, 1.08f);
+        ps.subTv.setShadowLayer(Ui.u(3), 0, Ui.u(1), 0xCC000000); // readable on bright scenes as well as through the box
         ps.subTv.setGravity(Gravity.CENTER);
         ps.subTv.setBackground(Ui.rect(Ui.alpha(Ui.INK, 0.6f), 10));
         ps.subTv.setPadding(Ui.u(16), Ui.u(6), Ui.u(16), Ui.u(6));
@@ -400,7 +407,7 @@ final class Overlays {
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) bottomStack.getLayoutParams();
         lp.setMargins(mx, 0, mx, my);
         bottomStack.setLayoutParams(lp);
-        ps.subTv.setMaxWidth(Ui.safeW() * 6 / 10);
+        ps.subTv.setMaxWidth(Ui.safeW() * 86 / 100); // 60% wrapped two-speaker cues into 4+ lines and the last one was cut
         toast.setMaxWidth(Ui.safeW() * 6 / 10);
         lp = (FrameLayout.LayoutParams) toast.getLayoutParams(); lp.setMargins(0, top, 0, 0); toast.setLayoutParams(lp);
         lp = (FrameLayout.LayoutParams) ps.numTv.getLayoutParams(); lp.setMargins(0, top, mx, 0); ps.numTv.setLayoutParams(lp);

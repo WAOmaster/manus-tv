@@ -90,7 +90,7 @@ public final class FilmGrid extends LinearLayout {
         source = ix.list("cat:Movies", st);
         final List<Entry> es = Films.candidates(c, ix, st, source);
         final int g = ++gen;
-        if (list.isEmpty()) sub.setText("Loading…"); // T102: quiet, in place
+        if (list.isEmpty()) sub.setText("Finding films on now…"); // T102: quiet, in place; says what it waits for
         new Thread(new Runnable() {
             @Override public void run() {
                 for (Entry e : es) e.film = MetaStore.get(c).get(e.clean.title, e.clean.year); // cache only, no network

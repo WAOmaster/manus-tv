@@ -143,6 +143,8 @@ public final class Guide extends FrameLayout {
     private final TextView phoneBtn;     // Search section: "Type on your phone"
     private boolean focusResults;        // text arrived from the phone: when its results show, the cursor goes to them
     private String oSec, oUrl; // where playback started: the page ('home' / 'films') and the channel it tuned (null = a film)
+    private String oZap; // the list that playback was committed into: zapping inside it still counts as the same visit (Back = the tile you clicked)
+    private String detFrom; // the page a Details page was opened over when its film started ('home' / 'lib' / 'libsearch' / 'series'): rebuilt under Details on return
     private boolean detailsOnly;   // opened from the banner: just the Details page over live TV, no lists
     private final BaseAdapter railAd, listAd;
     private final LinearLayout card, chips;
@@ -465,7 +467,7 @@ public final class Guide extends FrameLayout {
             @Override public void details(Films.Entry e) { showDetails(e); }
             @Override public void channel(String id, List<Channel> l, int pos) {
                 if (pos < 0 || pos >= l.size()) return;
-                markOrigin(l.get(pos).url);
+                markOrigin(l.get(pos).url, id);
                 host.onCommit(id, host.index().title(id), l, pos);
                 hide();
             }
@@ -473,7 +475,7 @@ public final class Guide extends FrameLayout {
                 if ("episode".equals(item.kind)) { // series tile: OK plays that episode, resuming if it was started
                     lk.manus.iptv.data.Db db = lk.manus.iptv.data.Db.get();
                     lk.manus.iptv.data.Db.Progress pr = db != null ? db.progress(item.id) : null;
-                    markOrigin(null);
+                    markOrigin(null, null);
                     host.playFilm(item, pr != null && lk.manus.iptv.data.FilmResume.canResume(pr.positionMs, pr.durationMs, pr.watched) ? pr.positionMs : 0L);
                     return;
                 }
@@ -658,6 +660,7 @@ public final class Guide extends FrameLayout {
             }
             @Override public void playFilm(lk.manus.iptv.data.Library.Item item, long startPosMs) {
                 oSec = null; // Back from a film started on a Details page goes to that page
+                detFrom = pageBehind();
                 host.playFilm(item, startPosMs);
             }
         });
@@ -679,6 +682,7 @@ public final class Guide extends FrameLayout {
             }
             @Override public void playFilm(lk.manus.iptv.data.Library.Item item, long startPosMs) {
                 oSec = null; // Back from a film started on a Details page goes to that page
+                detFrom = pageBehind();
                 host.playFilm(item, startPosMs);
             }
             @Override public void toast(String text) {
@@ -1056,8 +1060,9 @@ public final class Guide extends FrameLayout {
         drill = null;
         String act = host.activeSection(), railId = act, kind = null, selId = null, drillId = null;
         if (!homeDone && hasHome) act = railId = "home"; // first open after the app starts
-        String back = oSec != null && oSec.equals(shownId) && (oUrl == null || oUrl.equals(liveUrl)) ? oSec : null; // Back from what that page started: the page as it was left
-        oSec = null; oUrl = null;
+        boolean sameVisit = oUrl == null || oUrl.equals(liveUrl) || (oZap != null && oZap.equals(act)); // zapping inside the list the tile tuned into keeps the way back
+        String back = oSec != null && oSec.equals(shownId) && sameVisit ? oSec : null; // Back from what that page started: the page as it was left
+        oSec = null; oUrl = null; oZap = null;
         if (back != null) act = railId = back;
         homeDone = true;
         if (act.startsWith("cc:")) { kind = "countries"; selId = act; }
@@ -1198,7 +1203,7 @@ public final class Guide extends FrameLayout {
         List<Channel> src = host.index().list("cat:Movies", host.store());
         int pos = e.pos < src.size() && src.get(e.pos) == e.ch ? e.pos : src.indexOf(e.ch);
         if (pos < 0) return;
-        markOrigin(e.ch.url);
+        markOrigin(e.ch.url, "cat:Movies");
         host.onCommit("cat:Movies", "Movies", src, pos);
         hide();
     }
@@ -1208,7 +1213,7 @@ public final class Guide extends FrameLayout {
         List<Channel> src = host.index().all; // the list Series on now was built from (the ranked "all" list can drop a channel)
         int pos = src.indexOf(e.ch);
         if (pos < 0) return;
-        markOrigin(e.ch.url);
+        markOrigin(e.ch.url, "all");
         host.onCommit("all", host.index().title("all"), src, pos);
         hide();
     }
@@ -1218,7 +1223,7 @@ public final class Guide extends FrameLayout {
         List<Channel> src = host.index().list("cat:Movies", host.store());
         int pos = src.indexOf(ch);
         if (pos < 0) return;
-        markOrigin(ch.url);
+        markOrigin(ch.url, "cat:Movies");
         host.onCommit("cat:Movies", "Movies", src, pos);
         hide();
     }
@@ -1227,7 +1232,7 @@ public final class Guide extends FrameLayout {
         List<Channel> src = host.index().all;
         int pos = src.indexOf(ch);
         if (pos < 0) return;
-        markOrigin(ch.url);
+        markOrigin(ch.url, "all");
         host.onCommit("all", host.index().title("all"), src, pos);
         hide();
     }
@@ -1341,8 +1346,9 @@ public final class Guide extends FrameLayout {
     }
 
     /** Playback starts from the page on screen: Back (or the guide key) reopens that page with the same tile lit. */
-    private void markOrigin(String url) {
+    private void markOrigin(String url, String zapId) {
         oUrl = url;
+        oZap = zapId;
         oSec = home.getVisibility() == VISIBLE ? "home" : grid.getVisibility() == VISIBLE ? "films" : sgrid.getVisibility() == VISIBLE ? "seriesnow" : null;
         if (oSec != null && !oSec.equals(shownId)) oSec = null;
     }
@@ -1358,6 +1364,27 @@ public final class Guide extends FrameLayout {
         else if ("seriesnow".equals(shownId)) { sgrid.setVisibility(VISIBLE); sgrid.focusTile(); }
         else if ("series".equals(shownId)) { seriesLibrary.setVisibility(VISIBLE); seriesLibrary.focusTile(); }
         else { library.setVisibility(VISIBLE); library.focusTile(); }
+    }
+
+    /** The library-style page on screen right now (behind a Details page): where its Back must return after a film. */
+    private String pageBehind() {
+        if (home.getVisibility() == VISIBLE) return "home";
+        if (library.getVisibility() == VISIBLE) return library.isSearchMode() ? "libsearch" : "lib";
+        if (seriesLibrary != null && seriesLibrary.getVisibility() == VISIBLE) return "series";
+        return null;
+    }
+
+    /** After hideNow(): makes the page recorded in detFrom visible again (content itself stays hidden until Details closes). Pages keep their list, scroll and tile while hidden. */
+    private void restoreBehind() {
+        String from = detFrom;
+        detFrom = null; // used once: playing again from this Details page records the (now visible) page afresh
+        if (from == null) from = "series".equals(shownId) ? "series" : "lib".equals(shownId) ? "lib" : hasHome ? "home" : "lib"; // e.g. a film reopened from a notification
+        col2.setVisibility(GONE);
+        searchEt.setVisibility(GONE);
+        phoneBtn.setVisibility(GONE);
+        if ("home".equals(from)) { home.setVisibility(VISIBLE); home.tick(); }
+        else if ("series".equals(from) && seriesLibrary != null) seriesLibrary.setVisibility(VISIBLE);
+        else library.setVisibility(VISIBLE); // 'lib' and 'libsearch': the library keeps its search mode while hidden
     }
 
     public void reopenLibDetails(lk.manus.iptv.data.Library.Item item) {
@@ -1377,6 +1404,7 @@ public final class Guide extends FrameLayout {
             return;
         }
         hideNow(); // no stale list page behind the details page
+        restoreBehind(); // ...but the page it was opened from goes back underneath, so Back on Details lands on the tile, not on a channel list
         detailsOnly = false;
         open = true;
         hideCard();
@@ -1392,6 +1420,7 @@ public final class Guide extends FrameLayout {
     public void reopenSeriesDetails(lk.manus.iptv.data.Library.Item item) {
         if (item == null) return;
         hideNow(); // no stale list page behind the details page
+        restoreBehind(); // ...but the page it was opened from goes back underneath, so Back on Details lands on the tile, not on a channel list
         detailsOnly = false;
         open = true;
         hideCard();

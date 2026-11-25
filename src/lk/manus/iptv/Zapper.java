@@ -49,7 +49,7 @@ final class Zapper {
         ps.ui.hidePill();
         ps.ui.clearToast();
         ps.ui.updateBanner();
-        ps.ui.setState("Loading…");
+        ps.ui.setState(lk.manus.iptv.data.LoadText.tuning());
         ps.ui.showBanner();
         ps.h.removeCallbacks(ps.host.startR);
         ps.h.postDelayed(ps.host.startR, DEBOUNCE_MS);
@@ -165,7 +165,7 @@ final class Zapper {
             ps.h.removeCallbacks(ps.fov.watchdog);
             ps.h.removeCallbacks(ps.fov.reconnectR);
             ps.reconnecting = false;
-            ps.ui.setState("Loading…");
+            ps.ui.setState(lk.manus.iptv.data.LoadText.tuning());
             ps.h.removeCallbacks(ps.host.startR);
             ps.h.post(ps.host.startR);
         }

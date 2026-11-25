@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import lk.manus.iptv.player.Engine;
 import lk.manus.iptv.player.SubPref;
+import lk.manus.iptv.ui.Ui;
 
 /** Subtitle and audio tracks, the caption line and English translation. */
 final class Subs {
@@ -183,8 +184,18 @@ final class Subs {
     /** The engine's current cue, shown bottom-centre unless something else owns the screen. */
     void showCue() {
         if (subSel < 0 || ps.curCue.isEmpty() || !ps.playing || ps.guide.isOpen() || ps.previewCh != null) { ps.subTv.setVisibility(View.GONE); return; }
-        String shown = ps.trCue.isEmpty() ? ps.curCue : ps.trCue;
-        if (!shown.contentEquals(ps.subTv.getText())) ps.subTv.setText(shown);
+        String shown = lk.manus.iptv.player.SubFit.clean(ps.trCue.isEmpty() ? ps.curCue : ps.trCue);
+        if (shown.isEmpty()) { ps.subTv.setVisibility(View.GONE); return; } // a cue of only spaces/blank lines
+        if (!shown.contentEquals(ps.subTv.getText())) {
+            // size first, then text: the cue must fit SubFit.BUDGET lines at the box's max width, shrinking in steps, never cut
+            float base = Ui.px(Ui.BODY);
+            ps.subTv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, base);
+            float avg = ps.subTv.getPaint().measureText("the quick brown fox jumps over a lazy dog") / 41f;
+            int boxW = ps.subTv.getMaxWidth() - ps.subTv.getPaddingLeft() - ps.subTv.getPaddingRight();
+            float sc = avg > 0 && boxW > 0 ? lk.manus.iptv.player.SubFit.scale(shown, boxW / avg) : 1f;
+            if (sc != 1f) ps.subTv.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, base * sc);
+            ps.subTv.setText(shown);
+        }
         ps.subTv.setAlpha(ps.trOn && ps.trCue.isEmpty() && !trSrc.equals("en") ? 0.55f : 1f); // the original shows faintly until its English is ready
         ps.subTv.setVisibility(View.VISIBLE);
         if (!shownAny) { shownAny = true; ps.bCC.setVisibility(View.VISIBLE); ps.guide.setCC(true); }

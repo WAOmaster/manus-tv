@@ -226,6 +226,13 @@ public final class Index {
      */
     public List<Channel> list(String id, Store s) { return out(id, raw(id, s), s); }
 
+    /** M2: list(id) in the user's chosen order for that list (A-Z / Most watched); Number = list() itself. Guide rows and channel up/down both use this, so row N is channel N. */
+    public List<Channel> sorted(String id, Store s) {
+        List<Channel> l = list(id, s);
+        int m = id.equals("search") || id.startsWith("src:") ? ListTools.SORT_NUM : s.sortMode(id);
+        return m == ListTools.SORT_NUM ? l : ListTools.sort(l, m, sig);
+    }
+
     @SuppressWarnings("unchecked")
     private List<Channel> out(String id, List<Channel> r, Store s) {
         Ranker.Signals sg = sig;

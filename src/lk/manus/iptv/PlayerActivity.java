@@ -133,7 +133,7 @@ public class PlayerActivity extends Activity {
         ps.guide.onIndexChanged();
         ps.remind.arm();
         String sec = Config.DEBUG && getIntent().hasExtra("sec") && ps.list == null ? getIntent().getStringExtra("sec") : ps.store.section(); // DEBUG: open on this section without saving it
-        List<Channel> nl = ix.list(sec, ps.store);
+        List<Channel> nl = ix.sorted(sec, ps.store); // M2: the list's chosen order, as the guide shows it
         if (nl.isEmpty()) { sec = "foryou"; nl = ix.forYou; }
         if (nl.isEmpty()) {
             if (ps.filmPlayer == null || !ps.filmPlayer.isActive()) ps.message.setVisibility(View.VISIBLE);

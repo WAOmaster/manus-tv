@@ -100,9 +100,9 @@ final class Zapper {
         int pos = ps.list.indexOf(c);
         if (pos >= 0) { zapTo(pos, 1); return; }
         String sec = !c.country.isEmpty() && ps.idx.countries.containsKey(c.country) ? "cc:" + c.country : "all";
-        List<Channel> l = ps.idx.list(sec, ps.store);
+        List<Channel> l = ps.idx.sorted(sec, ps.store);
         pos = l.indexOf(c);
-        if (pos < 0) { sec = "all"; l = ps.idx.list(sec, ps.store); pos = l.indexOf(c); }
+        if (pos < 0) { sec = "all"; l = ps.idx.sorted(sec, ps.store); pos = l.indexOf(c); }
         if (pos < 0) { ps.ui.showToast("No previous channel", 1800); return; }
         commit(sec, ps.idx.title(sec), l, pos);
     }

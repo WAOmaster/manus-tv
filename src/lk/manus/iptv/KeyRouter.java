@@ -66,11 +66,17 @@ final class KeyRouter {
         return ps.act.superDispatch(e);
     }
 
+    /** Full screen: channel number. Guide open (M2): letter jump in A–Z lists and menus, row number elsewhere. */
+    private void digit(int d, KeyEvent e) {
+        if (e.getRepeatCount() != 0) return;
+        if (ps.guide.isOpen()) ps.guide.digit(d); else ps.zapper.numKey(d);
+    }
+
     public boolean keyDown(int k, KeyEvent e) {
         if (ps.spike > 0) return ps.act.superKeyDown(k, e);
         if (ps.filmPlayer != null && ps.filmPlayer.isActive()) return ps.filmPlayer.keyDown(k, e);
-        if (k >= KeyEvent.KEYCODE_0 && k <= KeyEvent.KEYCODE_9) { if (!ps.guide.isOpen() && e.getRepeatCount() == 0) ps.zapper.numKey(k - KeyEvent.KEYCODE_0); return true; }
-        if (k >= KeyEvent.KEYCODE_NUMPAD_0 && k <= KeyEvent.KEYCODE_NUMPAD_9) { if (!ps.guide.isOpen() && e.getRepeatCount() == 0) ps.zapper.numKey(k - KeyEvent.KEYCODE_NUMPAD_0); return true; }
+        if (k >= KeyEvent.KEYCODE_0 && k <= KeyEvent.KEYCODE_9) { digit(k - KeyEvent.KEYCODE_0, e); return true; }
+        if (k >= KeyEvent.KEYCODE_NUMPAD_0 && k <= KeyEvent.KEYCODE_NUMPAD_9) { digit(k - KeyEvent.KEYCODE_NUMPAD_0, e); return true; }
         switch (k) {
             case KeyEvent.KEYCODE_DPAD_UP: if (!ps.guide.isOpen()) ps.zapper.zap(1); return true;
             case KeyEvent.KEYCODE_DPAD_DOWN: if (!ps.guide.isOpen()) ps.zapper.zap(-1); return true;

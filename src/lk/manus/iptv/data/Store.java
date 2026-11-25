@@ -182,6 +182,9 @@ public final class Store {
 
     public String section() { return p.getString("sec", "foryou"); }
     public void setSection(String id) { p.edit().putString("sec", id).commit(); }
+    /** M2: each list's sort (ListTools.SORT_*), remembered per list id; Number (the list's own order) by default. */
+    public int sortMode(String listId) { return p.getInt("sort:" + listId, ListTools.SORT_NUM); }
+    public void setSortMode(String listId, int mode) { if (mode == ListTools.SORT_NUM) p.edit().remove("sort:" + listId).commit(); else p.edit().putInt("sort:" + listId, mode).commit(); }
 
     // ---- settings ----
 

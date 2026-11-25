@@ -144,6 +144,15 @@ public final class Guide extends FrameLayout {
     private boolean focusResults;        // text arrived from the phone: when its results show, the cursor goes to them
     private String oSec, oUrl; // where playback started: the page ('home' / 'films') and the channel it tuned (null = a film)
     private String oZap; // the list that playback was committed into: zapping inside it still counts as the same visit (Back = the tile you clicked)
+    // M2: find inside any list with the remote: per-list sort, a name filter, keypad letter jump / row-number jump
+    private LinearLayout tools; // header row over a channel list: [Sort: …] [Filter] / filter box
+    private TextView sortChip, filterChip, jumpTv;
+    private EditText filterEt;
+    private String filterQ = "", filterFor; // the filter text and the list id it applies to (cleared when another list shows)
+    private int lastDigit = -1, digitPress;
+    private long digitAt;
+    private String numBuf = "";
+    private static final long KEY_REPEAT_MS = 1500, NUM_WAIT_MS = 1200;
     private String detFrom; // the page a Details page was opened over when its film started ('home' / 'lib' / 'libsearch' / 'series'): rebuilt under Details on return
     private boolean detailsOnly;   // opened from the banner: just the Details page over live TV, no lists
     private final BaseAdapter railAd, listAd;
@@ -229,7 +238,7 @@ public final class Guide extends FrameLayout {
     private final Runnable idleR = new Runnable() {
         @Override public void run() {
             // never close under a text box (search / add-source form) or an open dialog
-            if (searchEt.hasFocus() || settings.hasTextFocus() || dlg.getVisibility() == VISIBLE || phone.isUp()) { h.postDelayed(idleR, IDLE_MS); return; }
+            if (searchEt.hasFocus() || filterEt.hasFocus() || settings.hasTextFocus() || dlg.getVisibility() == VISIBLE || phone.isUp()) { h.postDelayed(idleR, IDLE_MS); return; }
             Log.i(TAG, "guide idle timeout");
             dismiss(true);
         }
@@ -370,6 +379,34 @@ public final class Guide extends FrameLayout {
         LinearLayout.LayoutParams pp = new LinearLayout.LayoutParams(-1, -2);
         pp.setMargins(Ui.u(12), 0, Ui.u(12), Ui.u(6));
         c2.addView(phoneBtn, pp);
+        tools = new LinearLayout(ctx);
+        tools.setOrientation(LinearLayout.HORIZONTAL);
+        tools.setGravity(Gravity.CENTER_VERTICAL);
+        sortChip = toolChip(ctx);
+        filterChip = toolChip(ctx);
+        filterEt = new EditText(ctx);
+        filterEt.setSingleLine(true);
+        Ui.size(filterEt, Ui.CAPTION);
+        filterEt.setTextColor(Ui.PAPER);
+        filterEt.setHintTextColor(Ui.MUTED);
+        filterEt.setHint("Filter this list");
+        filterEt.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        filterEt.setImeOptions(EditorInfo.IME_ACTION_DONE | EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_FLAG_NO_FULLSCREEN);
+        filterEt.setPadding(Ui.u(14), Ui.u(6), Ui.u(14), Ui.u(6));
+        android.graphics.drawable.StateListDrawable fbg = new android.graphics.drawable.StateListDrawable();
+        fbg.addState(new int[]{android.R.attr.state_focused}, Ui.ring());
+        fbg.addState(new int[]{}, Ui.rect(Ui.PANEL, 12));
+        filterEt.setBackground(fbg);
+        filterEt.setVisibility(GONE);
+        LinearLayout.LayoutParams tcp = new LinearLayout.LayoutParams(-2, -2);
+        tcp.rightMargin = Ui.u(8);
+        tools.addView(sortChip, tcp);
+        tools.addView(filterChip, new LinearLayout.LayoutParams(-2, -2));
+        tools.addView(filterEt, new LinearLayout.LayoutParams(0, -2, 1));
+        tools.setVisibility(GONE);
+        LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(-1, -2);
+        tlp.setMargins(Ui.u(18), 0, Ui.u(12), Ui.u(6));
+        c2.addView(tools, tlp);
         list = newList();
         listAd = new BaseAdapter() {
             @Override public int getCount() { return items.size(); }
@@ -405,6 +442,15 @@ public final class Guide extends FrameLayout {
         empty.setGravity(Gravity.CENTER);
         empty.setPadding(Ui.u(40), 0, Ui.u(40), 0);
         col2.addView(empty, new LayoutParams(-1, -1));
+        jumpTv = Ui.tv(ctx, Ui.DISPLAY, Ui.PAPER, true); // M2: the letter or number being jumped to, big, top-right of the list
+        jumpTv.setGravity(Gravity.CENTER);
+        jumpTv.setMinWidth(Ui.u(76));
+        jumpTv.setPadding(Ui.u(18), Ui.u(10), Ui.u(18), Ui.u(10));
+        jumpTv.setBackground(Ui.card(0.95f, 16));
+        jumpTv.setVisibility(GONE);
+        LayoutParams jlp = new LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        jlp.setMargins(0, Ui.u(8), Ui.u(18), 0);
+        col2.addView(jumpTv, jlp);
         content.addView(col2, new LinearLayout.LayoutParams(0, -1));
         settings = new SettingsView(ctx, new SettingsView.Host() {
             @Override public Index index() { return Guide.this.host.index(); }
@@ -1002,6 +1048,7 @@ public final class Guide extends FrameLayout {
                 return k == KeyEvent.KEYCODE_DPAD_RIGHT;
             }
         });
+        wireTools();
         rail.setOnFocusChangeListener(fl);
         list.setOnFocusChangeListener(fl);
         rail.setOnKeyListener(new OnKeyListener() {
@@ -1033,6 +1080,10 @@ public final class Guide extends FrameLayout {
                     if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) phoneBtn.requestFocus();
                     return true;
                 }
+                if (k == KeyEvent.KEYCODE_DPAD_UP && tools.getVisibility() == VISIBLE && list.getSelectedItemPosition() <= 0) { // M2: top of a channel list: up to Sort / Filter
+                    if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) sortChip.requestFocus();
+                    return true;
+                }
                 if (k != KeyEvent.KEYCODE_DPAD_LEFT && k != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
                 if (e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0) {
                     if (k == KeyEvent.KEYCODE_DPAD_LEFT) rail.requestFocus();
@@ -1041,6 +1092,229 @@ public final class Guide extends FrameLayout {
                 return true;
             }
         });
+    }
+
+    // ---- M2: sort / filter / jump ----
+
+    private TextView toolChip(Context c) {
+        TextView t = Ui.tv(c, Ui.CAPTION, Ui.PAPER, true);
+        t.setFocusable(true);
+        t.setPadding(Ui.u(14), Ui.u(7), Ui.u(14), Ui.u(7));
+        android.graphics.drawable.StateListDrawable bg = new android.graphics.drawable.StateListDrawable();
+        bg.addState(new int[]{android.R.attr.state_focused}, Ui.ring());
+        bg.addState(new int[]{}, Ui.chip());
+        t.setBackground(bg);
+        return t;
+    }
+
+    private void wireTools() {
+        sortChip.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) { cycleSort(); } });
+        filterChip.setOnClickListener(new OnClickListener() { @Override public void onClick(View v) {
+            if (filterQ.isEmpty()) openFilter(); else { clearFilter(); filterChip.requestFocus(); }
+        } });
+        sortChip.setOnKeyListener(new OnKeyListener() {
+            @Override public boolean onKey(View v, int k, KeyEvent e) {
+                boolean first = e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0;
+                if (k == KeyEvent.KEYCODE_DPAD_LEFT) { if (first) rail.requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_RIGHT) { if (first) (filterEt.getVisibility() == VISIBLE ? filterEt : filterChip).requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (first && !items.isEmpty()) list.requestFocus(); return true; }
+                return k == KeyEvent.KEYCODE_DPAD_UP;
+            }
+        });
+        filterChip.setOnKeyListener(new OnKeyListener() {
+            @Override public boolean onKey(View v, int k, KeyEvent e) {
+                boolean first = e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 0;
+                if (k == KeyEvent.KEYCODE_DPAD_LEFT) { if (first) sortChip.requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (first && !items.isEmpty()) list.requestFocus(); return true; }
+                return k == KeyEvent.KEYCODE_DPAD_UP || k == KeyEvent.KEYCODE_DPAD_RIGHT;
+            }
+        });
+        final Runnable filterR = new Runnable() { @Override public void run() { applyFilter(filterEt.getText().toString()); } };
+        filterEt.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence q, int a, int b, int c) { }
+            @Override public void onTextChanged(CharSequence q, int a, int b, int c) { }
+            @Override public void afterTextChanged(Editable ed) { if (filterEt.getVisibility() == VISIBLE) { h.removeCallbacks(filterR); h.postDelayed(filterR, 150); } }
+        });
+        filterEt.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override public boolean onEditorAction(TextView v, int a, KeyEvent e) {
+                hideIme();
+                h.removeCallbacks(filterR);
+                applyFilter(filterEt.getText().toString());
+                if (!items.isEmpty()) list.requestFocus();
+                return true;
+            }
+        });
+        filterEt.setOnKeyListener(new OnKeyListener() {
+            @Override public boolean onKey(View v, int k, KeyEvent e) {
+                boolean down = e.getAction() == KeyEvent.ACTION_DOWN;
+                if (k == KeyEvent.KEYCODE_DPAD_CENTER) {
+                    if (!down) { InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE); if (imm != null) imm.showSoftInput(v, 0); }
+                    return true;
+                }
+                if (k == KeyEvent.KEYCODE_DPAD_LEFT && filterEt.getSelectionStart() <= 0) { if (down && e.getRepeatCount() == 0) sortChip.requestFocus(); return true; }
+                if (k == KeyEvent.KEYCODE_DPAD_DOWN) { if (down) { hideIme(); if (!items.isEmpty()) list.requestFocus(); } return true; }
+                return k == KeyEvent.KEYCODE_DPAD_UP;
+            }
+        });
+        filterEt.setOnFocusChangeListener(new OnFocusChangeListener() {
+            @Override public void onFocusChange(View v, boolean f) {
+                if (f || filterEt.getVisibility() != VISIBLE) return;
+                hideIme();
+                filterEt.setVisibility(GONE); // the box folds back into the chip, which now shows the text (or plain "Filter")
+                filterChip.setVisibility(VISIBLE);
+                updateTools();
+            }
+        });
+    }
+
+    /** True for lists that are channel lists the user browses (not search results, folders, YouTube). */
+    private static boolean sortable(String id) { return id != null && !id.equals("search") && !id.startsWith("src:") && !id.equals("yt") && !id.equals("settings"); }
+
+    /** A browse list as shown: the index list in this list's sort, narrowed by the filter when it was typed on this list. */
+    private List<Channel> browse(String id) {
+        if (filterFor != null && !filterFor.equals(id)) resetFilter(); // another list: its filter does not follow
+        List<Channel> l = host.index().sorted(id, host.store());
+        return filterQ.isEmpty() ? l : lk.manus.iptv.data.ListTools.filter(l, filterQ);
+    }
+
+    private void resetFilter() {
+        filterQ = "";
+        filterFor = null;
+        if (filterEt.getVisibility() == VISIBLE) { filterEt.setVisibility(GONE); filterChip.setVisibility(VISIBLE); }
+        if (filterEt.getText().length() > 0) filterEt.setText("");
+    }
+
+    /** Rebuilds the list on screen (sort or filter changed), keeping the cursor on the same channel when it is still there. */
+    private void reshape() {
+        String id = memoKey();
+        if (chanList == null || !sortable(id)) return;
+        Channel keep = selected() != null ? selected() : listSel >= 0 && listSel < items.size() && items.get(listSel) instanceof Channel ? (Channel) items.get(listSel) : null;
+        chanList = browse(id);
+        items.clear();
+        items.addAll(chanList);
+        int at = keep == null ? 0 : chanList.indexOf(keep);
+        applyItems(Math.max(0, at));
+    }
+
+    private void cycleSort() {
+        String id = memoKey();
+        if (!sortable(id)) return;
+        int m = lk.manus.iptv.data.ListTools.next(host.store().sortMode(id));
+        host.store().setSortMode(id, m);
+        reshape();
+        updateTools();
+        sortChip.requestFocus();
+        if (m == lk.manus.iptv.data.ListTools.SORT_AZ) pill("A–Z: press 2 for A B C, 3 for D E F… on your remote");
+        else pill("Type a number on your remote to jump to that row");
+    }
+
+    private void openFilter() {
+        filterChip.setVisibility(GONE);
+        filterEt.setVisibility(VISIBLE);
+        filterEt.setText(filterQ);
+        filterEt.setSelection(filterEt.getText().length());
+        filterEt.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(filterEt, 0);
+    }
+
+    private void applyFilter(String q) {
+        String t = q == null ? "" : q.trim();
+        if (t.length() > 40) t = t.substring(0, 40);
+        if (t.equals(filterQ)) return;
+        filterQ = t;
+        filterFor = t.isEmpty() ? null : memoKey();
+        reshape();
+        updateTools();
+    }
+
+    private void clearFilter() {
+        boolean was = !filterQ.isEmpty();
+        resetFilter();
+        if (was) reshape();
+        updateTools();
+    }
+
+    /** Header row for the list on screen: shown over browse lists only; chip texts follow the list's sort and filter. */
+    private void updateTools() {
+        String id = memoKey();
+        boolean show = chanList != null && sortable(id) && (!items.isEmpty() || !filterQ.isEmpty() || filterEt.getVisibility() == VISIBLE);
+        tools.setVisibility(show ? VISIBLE : GONE);
+        if (!show) return;
+        sortChip.setText("Sort: " + lk.manus.iptv.data.ListTools.label(host.store().sortMode(id)));
+        filterChip.setText(filterQ.isEmpty() ? "Filter" : "Filter: “" + lk.manus.iptv.data.LoadText.name(filterQ) + "”  ✕");
+    }
+
+    private final Runnable jumpHideR = new Runnable() { @Override public void run() { jumpTv.setVisibility(GONE); } };
+    private final Runnable numGoR = new Runnable() { @Override public void run() { numJump(); } };
+
+    private void showJump(String t, long ms) {
+        jumpTv.setText(t);
+        jumpTv.setVisibility(VISIBLE);
+        h.removeCallbacks(jumpHideR);
+        h.postDelayed(jumpHideR, ms);
+    }
+
+    /** Names of the rows on screen (channels, countries / folders), for the letter jump. */
+    private List<String> rowNames(List<?> rows) {
+        List<String> out = new ArrayList<>(rows.size());
+        for (Object o : rows) out.add(o instanceof Channel ? ((Channel) o).name : o instanceof CC ? ((CC) o).name : o instanceof Rail ? (((Rail) o).selectable() ? ((Rail) o).label : null) : null);
+        return out;
+    }
+
+    /**
+     * M2: a number key while the guide is open. In an A–Z list (and in the categories / countries menu) it is a phone-keypad
+     * letter jump (2 = A, again = B…); in any other list it types the row number to jump to. False = not used here.
+     */
+    public boolean digit(int d) {
+        if (!open || rawKeys()) return false;
+        long now = SystemClock.uptimeMillis();
+        int press = d == lastDigit && now - digitAt < KEY_REPEAT_MS ? digitPress + 1 : 0;
+        lastDigit = d; digitPress = press; digitAt = now;
+        if (rail.hasFocus() && level == 2) { // categories / countries menu: always letters
+            lk.manus.iptv.data.ListTools.Jump j = lk.manus.iptv.data.ListTools.letter(rowNames(l2), d, press);
+            if (j.row < 0) { showJump(j.label.isEmpty() ? String.valueOf(d) : "No " + j.label, 900); return true; }
+            showJump(j.label, 900);
+            railTo(j.row);
+            return true;
+        }
+        if (!list.hasFocus() && !(tools.hasFocus() && !filterEt.hasFocus())) return false;
+        if (items.isEmpty()) return true;
+        String id = memoKey();
+        boolean letters = sortable(id) && chanList != null ? host.store().sortMode(id) == lk.manus.iptv.data.ListTools.SORT_AZ : !(items.get(0) instanceof Channel);
+        if (letters) {
+            numBuf = "";
+            lk.manus.iptv.data.ListTools.Jump j = lk.manus.iptv.data.ListTools.letter(rowNames(items), d, press);
+            if (j.row < 0) { showJump(j.label.isEmpty() ? String.valueOf(d) : "No " + j.label, 900); return true; }
+            showJump(j.label, 900);
+            jumpTo(j.row);
+            return true;
+        }
+        numBuf = (numBuf + d).replaceFirst("^0+(?=\\d)", "");
+        if (numBuf.length() > 5) numBuf = numBuf.substring(numBuf.length() - 5);
+        showJump(numBuf, NUM_WAIT_MS + 600);
+        h.removeCallbacks(numGoR);
+        long more = Long.parseLong(numBuf) * 10;
+        if (more > items.size()) numJump(); // no longer number fits this list: go now
+        else h.postDelayed(numGoR, NUM_WAIT_MS);
+        return true;
+    }
+
+    private void numJump() {
+        h.removeCallbacks(numGoR);
+        String n = numBuf;
+        numBuf = "";
+        int r = lk.manus.iptv.data.ListTools.row(n, items.size());
+        if (r < 0) { if (!n.isEmpty()) showJump("No " + n, 900); return; }
+        showJump(n, 700);
+        jumpTo(r);
+    }
+
+    private void jumpTo(int row) {
+        if (row < 0 || row >= items.size()) return;
+        if (!list.hasFocus()) list.requestFocus();
+        list.setSelectionFromTop(row, Ui.u(130));
+        listSel = row;
     }
 
     // ---- public API ----
@@ -1171,6 +1445,9 @@ public final class Guide extends FrameLayout {
             return;
         }
         if (phoneBtn.hasFocus()) { openPhone(); return; }
+        if (!numBuf.isEmpty()) { numJump(); return; } // M2: OK right after typing a row number goes there now
+        if (sortChip.hasFocus()) { cycleSort(); return; }
+        if (filterChip.hasFocus()) { filterChip.performClick(); return; }
         if (grid.getVisibility() == VISIBLE && grid.hasFocus()) { if (grid.focused() != null) openFilm(grid.focused()); return; }
         if (sgrid.getVisibility() == VISIBLE && sgrid.hasFocus()) { if (sgrid.focused() != null) openSeries(sgrid.focused()); return; }
         if (library.getVisibility() == VISIBLE && library.hasFocus()) { library.activate(); return; }
@@ -1200,7 +1477,7 @@ public final class Guide extends FrameLayout {
 
     /** OK on a poster: tune that channel (the Movies list, so Up / Down zap through the films) and close the guide. */
     private void openFilm(Films.Entry e) {
-        List<Channel> src = host.index().list("cat:Movies", host.store());
+        List<Channel> src = host.index().sorted("cat:Movies", host.store()); // M2: the order the guide shows, so row N is channel N
         int pos = e.pos < src.size() && src.get(e.pos) == e.ch ? e.pos : src.indexOf(e.ch);
         if (pos < 0) return;
         markOrigin(e.ch.url, "cat:Movies");
@@ -1220,7 +1497,7 @@ public final class Guide extends FrameLayout {
 
     /** The same film on another channel (the "Also on" list): tune it in the Movies list. */
     private void openFilmCh(Channel ch) {
-        List<Channel> src = host.index().list("cat:Movies", host.store());
+        List<Channel> src = host.index().sorted("cat:Movies", host.store()); // M2: the order the guide shows, so row N is channel N
         int pos = src.indexOf(ch);
         if (pos < 0) return;
         markOrigin(ch.url, "cat:Movies");
@@ -1439,7 +1716,7 @@ public final class Guide extends FrameLayout {
     public void onRemindersChanged() { details.refresh(); home.tick(); }
 
     /** True while a dialog, the search box or Settings has focus: OK there keeps its own meaning even if a reminder pill shows. */
-    public boolean ownsOk() { return open && (dlg.getVisibility() == VISIBLE || searchEt.hasFocus() || (settings.getVisibility() == VISIBLE && settings.hasFocus())); }
+    public boolean ownsOk() { return open && (dlg.getVisibility() == VISIBLE || searchEt.hasFocus() || filterEt.hasFocus() || tools.hasFocus() || (settings.getVisibility() == VISIBLE && settings.hasFocus())); }
 
     private void closeDetails() { details.hide(); which.hide(); closePhone(); content.setVisibility(VISIBLE); }
 
@@ -1487,7 +1764,7 @@ public final class Guide extends FrameLayout {
     }
 
     /** True while a text box or the settings screen has focus: the activity then hands every key to the views. */
-    public boolean rawKeys() { return open && (dlg.getVisibility() == VISIBLE || details.isUp() || (libDetails != null && libDetails.isUp()) || (seriesDetails != null && seriesDetails.isUp()) || which.isUp() || phone.isUp() || searchEt.hasFocus() || (settings.getVisibility() == VISIBLE && settings.hasFocus())); }
+    public boolean rawKeys() { return open && (dlg.getVisibility() == VISIBLE || details.isUp() || (libDetails != null && libDetails.isUp()) || (seriesDetails != null && seriesDetails.isUp()) || which.isUp() || phone.isUp() || searchEt.hasFocus() || filterEt.hasFocus() || (settings.getVisibility() == VISIBLE && settings.hasFocus())); }
 
     /** Back: dialog, keyboard, search text, settings page, folder, level 2, then close. Never leaves the app. */
     public void onBack() {
@@ -1526,6 +1803,9 @@ public final class Guide extends FrameLayout {
         }
         if (imeVisible()) { hideIme(); return; }
         if (searchEt.hasFocus() && searchEt.getText().length() > 0) { searchEt.setText(""); return; }
+        if (filterEt.hasFocus()) { if (filterEt.getText().length() > 0) filterEt.setText(""); else { clearFilter(); if (!items.isEmpty()) list.requestFocus(); else filterChip.requestFocus(); } return; } // M2: Back empties the filter box, then leaves it
+        if (!filterQ.isEmpty() && (list.hasFocus() || tools.hasFocus())) { clearFilter(); return; } // M2: Back on a filtered list shows the whole list again (cursor kept)
+        if (tools.hasFocus()) { if (!items.isEmpty()) list.requestFocus(); else rail.requestFocus(); return; }
         if (settings.getVisibility() == VISIBLE && settings.hasFocus()) { if (!settings.back()) rail.requestFocus(); return; }
         if (drill != null) { saveTop(); drill = null; shownId = null; showSection(rails.get(railSel)); return; }
         if (!rail.hasFocus()) { if (level == 2 || "search".equals(shownId) || "lib".equals(shownId) || "series".equals(shownId)) rail.requestFocus(); else dismiss(true); return; }
@@ -1683,7 +1963,7 @@ public final class Guide extends FrameLayout {
         if (!open) return;
         String id = drill != null ? drill : shownId;
         if (chanList != null && id != null && !"search".equals(id) && !id.startsWith("src:")) {
-            chanList = host.index().list(id, host.store());
+            chanList = browse(id);
             items.clear();
             items.addAll(chanList);
             applyItems(listSel);
@@ -1751,7 +2031,7 @@ public final class Guide extends FrameLayout {
         for (Rail r : l1) if (r.id.equals("fav")) r.count = host.index().list("fav", host.store()).size();
         railAd.notifyDataSetChanged();
         if ("fav".equals(shownId) && drill == null) {
-            chanList = host.index().list("fav", host.store());
+            chanList = browse("fav");
             items.clear();
             items.addAll(chanList);
             applyItems(Math.min(listSel, Math.max(0, items.size() - 1)));
@@ -1766,7 +2046,12 @@ public final class Guide extends FrameLayout {
         saveTop();
         Integer top = memoTop.get("fav");
         host.store().moveFav(c.url, how);
-        chanList = host.index().list("fav", host.store());
+        if (host.store().sortMode("fav") != lk.manus.iptv.data.ListTools.SORT_NUM || !filterQ.isEmpty()) { // moving only means something in your own order
+            host.store().setSortMode("fav", lk.manus.iptv.data.ListTools.SORT_NUM);
+            resetFilter();
+            pill("Favourites are back in your own order");
+        }
+        chanList = browse("fav");
         items.clear();
         items.addAll(chanList);
         nextTop = top;
@@ -1919,7 +2204,7 @@ public final class Guide extends FrameLayout {
             chanList = lastResults;
         }
         else {
-            chanList = host.index().list(r.id, host.store());
+            chanList = browse(r.id);
             items.addAll(chanList);
         }
         applyItems(restore(r.id));
@@ -1974,7 +2259,7 @@ public final class Guide extends FrameLayout {
         memo.put(shownId, listSel);
         saveTop();
         drill = id;
-        chanList = host.index().list(id, host.store());
+        chanList = browse(id);
         items.clear();
         items.addAll(chanList);
         applyItems(restore(id));
@@ -2047,6 +2332,8 @@ public final class Guide extends FrameLayout {
         h.removeCallbacks(cardR); h.removeCallbacks(liveR); stopMini();
         hideCard();
         if (list.hasFocus()) dwell();
+        if (!filterQ.isEmpty() && items.isEmpty() && chanList != null) { empty.setText("No channel here matches “" + lk.manus.iptv.data.LoadText.name(filterQ) + "”\n\nOK on Filter clears it"); empty.setVisibility(VISIBLE); }
+        updateTools();
     }
 
     private void selectList(int pos) { listSel = pos; list.setSelectionFromTop(pos, Ui.u(130)); }

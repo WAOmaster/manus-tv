@@ -15,13 +15,16 @@ UP=19 DOWN=20 LEFT=21 RIGHT=22 OK=23 BACK=4
 D0=7 D1=8 D2=9 D3=10 D4=11 D5=12 D6=13 D7=14 D8=15 D9=16
 
 echo "== first run: skip the setup wizard (debuggable build), then start with the CI playlist + mock film server"
-adb shell run-as $PKG sh -c 'mkdir -p shared_prefs && printf "%s" "<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\" ?><map><boolean name=\"setup_done\" value=\"true\" /></map>" > shared_prefs/iptv.xml'
+# the device shell joins adb's arguments into one command line: anything with | or quotes is pushed as a file / single-quoted
+printf '%s' '<?xml version="1.0" encoding="utf-8" standalone="yes" ?><map><boolean name="setup_done" value="true" /></map>' > /tmp/iptv.xml
+adb push /tmp/iptv.xml /data/local/tmp/iptv.xml >/dev/null
+adb shell "run-as $PKG mkdir -p shared_prefs && run-as $PKG cp /data/local/tmp/iptv.xml shared_prefs/iptv.xml && run-as $PKG ls shared_prefs" || echo "WARNING: could not mark setup done"
 adb logcat -c
-adb shell am start -n "$ACT" --es src "http://10.0.2.2:8000/playlist.m3u" --ez subsdef true --es xtream "http://10.0.2.2:8081|demo|demo123" >/dev/null
+adb shell am start -n "$ACT" --es src "http://10.0.2.2:8000/playlist.m3u" --ez subsdef true --es xtream "'http://10.0.2.2:8081|demo|demo123'" >/dev/null
 sleep 0.8; shot M1c-boot-a
 sleep 1.2; shot M1c-boot-b
 sleep 2; shot M1c-boot-c
-sleep 25; shot live-after-start
+sleep 40; shot live-after-start # channels + the mock film library sync
 
 echo "== M2: the All list, row-number jump, sort chip, keypad letters, filter"
 open all 4; shot M2-all-number-sort
